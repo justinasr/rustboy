@@ -135,7 +135,7 @@ fn xor_r8_a(a: u8, r: &mut u8, f: &mut u8) {
 }
 
 fn rl_r8(r: &mut u8, f: &mut u8) {
-    // Rotate bits in register r left, through the carry flag.
+    // Rotate bits in register "r" left, through the carry flag.
     set_carry_flag(f, *r & 0b1000_0000 != 0);
     *r <<= 1;
     *r |= if get_carry_flag(*f) { 1 } else { 0 };
@@ -174,6 +174,14 @@ fn cp_r8(a: u8, r: u8, f: &mut u8) {
     set_carry_flag(f, a < r);
 }
 
+fn res_r8(b: u8, r: &mut u8) {
+    *r = *r & ((1 << b) ^ 0xFF);
+}
+
+fn set_r8(b: u8, r: &mut u8) {
+    *r = *r | (1 << b);
+}
+
 fn main() {
     // Registers
     let mut pc: u16 = 0; // Program Counter (PC)
@@ -198,11 +206,7 @@ fn main() {
     let mut ie: u8 = 0; // Interrupt Enable (IE)
 
     // RAM
-    let mut ram: Vec<u8> = vec![0; 0xFFFF + 1];
-
-    // Set LCD Y coordinate to 144 which indicates VBlank period
-    // https://gbdev.io/pandocs/STAT.html#ff44--ly-lcd-y-coordinate-read-only
-    ram[0xFF44] = 0x90;
+    let ram: Vec<u8> = vec![0; 0xFFFF + 1];
 
     let bootrom_path = "boot.bin";
     let bootrom: Vec<u8> = std::fs::read(bootrom_path).unwrap();
@@ -216,10 +220,17 @@ fn main() {
     };
 
     let mut iter = 0;
-    while iter < 100_000 {
+    while iter < 3_000_000 {
         let opcode = memory.read_byte(pc);
         print!("[{:8}] PC = {:#06x} | Opcode = {:#04x} |", iter, pc, opcode);
         pc += 1;
+
+        // Set LCD Y coordinate to 144 which indicates VBlank period
+        // https://gbdev.io/pandocs/STAT.html#ff44--ly-lcd-y-coordinate-read-only
+        memory.write_byte(
+            0xFF44,
+            (memory.read_byte(0xFF44) + if iter % 4 == 0 { 1 } else { 0 }) % 154,
+        );
 
         match opcode {
             0x00 => {
@@ -879,296 +890,42 @@ fn main() {
                 let cb_opcode = memory.read_byte(pc);
                 print!(" CB Opcode = {:#04x} |", cb_opcode);
                 pc += 1;
+                let hl = u8_u8_to_u16(h, l);
+                let regs = [
+                    &mut b,
+                    &mut c,
+                    &mut d,
+                    &mut e,
+                    &mut h,
+                    &mut l,
+                    memory.get_cell(hl),
+                    &mut a,
+                ];
+                let reg_names = ["B", "C", "D", "E", "H", "L", "(HL)", "A"];
                 match cb_opcode {
-                    0x10 => {
-                        println!(" RL B");
-                        rl_r8(&mut b, &mut f);
-                    }
-                    0x11 => {
-                        println!(" RL C");
-                        rl_r8(&mut c, &mut f);
-                    }
-                    0x12 => {
-                        println!(" RL D");
-                        rl_r8(&mut d, &mut f);
-                    }
-                    0x13 => {
-                        println!(" RL E");
-                        rl_r8(&mut e, &mut f);
-                    }
-                    0x14 => {
-                        println!(" RL H");
-                        rl_r8(&mut h, &mut f);
-                    }
-                    0x15 => {
-                        println!(" RL L");
-                        rl_r8(&mut l, &mut f);
-                    }
-                    0x16 => {
-                        println!(" RL (HL)");
-                        let addr = u8_u8_to_u16(h, l);
-                        rl_r8(memory.get_cell(addr), &mut f);
-                    }
-                    0x17 => {
-                        println!(" RL A");
-                        rl_r8(&mut a, &mut f);
+                    0x10..=0x17 => {
+                        let reg_name = reg_names[(cb_opcode & 0b0111) as usize];
+                        println!(" RL {reg_name}");
+                        rl_r8(regs[(cb_opcode & 0b0111) as usize], &mut f);
                     }
 
-                    0x40 => {
-                        println!(" BIT 0, B");
-                        bit_r8(0, b, &mut f);
+                    0x40..=0x7F => {
+                        let bit = (cb_opcode >> 3) & 0b0111;
+                        let reg_name = reg_names[(cb_opcode & 0b0111) as usize];
+                        println!(" BIT {bit}, {reg_name}");
+                        bit_r8(bit, *regs[(cb_opcode & 0b0111) as usize], &mut f);
                     }
-                    0x41 => {
-                        println!(" BIT 0, C");
-                        bit_r8(0, c, &mut f);
+                    0x80..=0xBF => {
+                        let bit = (cb_opcode >> 3) & 0b0111;
+                        let reg_name = reg_names[(cb_opcode & 0b0111) as usize];
+                        println!(" RES {bit}, {reg_name}");
+                        res_r8(bit, regs[(cb_opcode & 0b0111) as usize]);
                     }
-                    0x42 => {
-                        println!(" BIT 0, D");
-                        bit_r8(0, d, &mut f);
-                    }
-                    0x43 => {
-                        println!(" BIT 0, E");
-                        bit_r8(0, e, &mut f);
-                    }
-                    0x44 => {
-                        println!(" BIT 0, H");
-                        bit_r8(0, h, &mut f);
-                    }
-                    0x45 => {
-                        println!(" BIT 0, L");
-                        bit_r8(0, l, &mut f);
-                    }
-                    0x46 => {
-                        println!(" BIT 0, (HL)");
-                        bit_r8(0, memory.read_byte(u8_u8_to_u16(h, l)), &mut f);
-                    }
-                    0x47 => {
-                        println!(" BIT 1, A");
-                        bit_r8(1, a, &mut f);
-                    }
-                    0x48 => {
-                        println!(" BIT 1, B");
-                        bit_r8(1, b, &mut f);
-                    }
-                    0x49 => {
-                        println!(" BIT 1, C");
-                        bit_r8(1, c, &mut f);
-                    }
-                    0x4A => {
-                        println!(" BIT 1, D");
-                        bit_r8(1, d, &mut f);
-                    }
-                    0x4B => {
-                        println!(" BIT 1, E");
-                        bit_r8(1, e, &mut f);
-                    }
-                    0x4C => {
-                        println!(" BIT 1, H");
-                        bit_r8(1, h, &mut f);
-                    }
-                    0x4D => {
-                        println!(" BIT 1, L");
-                        bit_r8(1, l, &mut f);
-                    }
-                    0x4E => {
-                        println!(" BIT 1, (HL)");
-                        bit_r8(1, memory.read_byte(u8_u8_to_u16(h, l)), &mut f);
-                    }
-                    0x4F => {
-                        println!(" BIT 1, A");
-                        bit_r8(1, a, &mut f);
-                    }
-                    0x50 => {
-                        println!(" BIT 2, B");
-                        bit_r8(2, b, &mut f);
-                    }
-                    0x51 => {
-                        println!(" BIT 2, C");
-                        bit_r8(2, c, &mut f);
-                    }
-                    0x52 => {
-                        println!(" BIT 2, D");
-                        bit_r8(2, d, &mut f);
-                    }
-                    0x53 => {
-                        println!(" BIT 2, E");
-                        bit_r8(2, e, &mut f);
-                    }
-                    0x54 => {
-                        println!(" BIT 2, H");
-                        bit_r8(2, h, &mut f);
-                    }
-                    0x55 => {
-                        println!(" BIT 2, L");
-                        bit_r8(2, l, &mut f);
-                    }
-                    0x56 => {
-                        println!(" BIT 2, (HL)");
-                        bit_r8(2, memory.read_byte(u8_u8_to_u16(h, l)), &mut f);
-                    }
-                    0x57 => {
-                        println!(" BIT 2, A");
-                        bit_r8(2, a, &mut f);
-                    }
-                    0x58 => {
-                        println!(" BIT 3, B");
-                        bit_r8(3, b, &mut f);
-                    }
-                    0x59 => {
-                        println!(" BIT 3, C");
-                        bit_r8(3, c, &mut f);
-                    }
-                    0x5A => {
-                        println!(" BIT 3, D");
-                        bit_r8(3, d, &mut f);
-                    }
-                    0x5B => {
-                        println!(" BIT 3, E");
-                        bit_r8(3, e, &mut f);
-                    }
-                    0x5C => {
-                        println!(" BIT 3, H");
-                        bit_r8(3, h, &mut f);
-                    }
-                    0x5D => {
-                        println!(" BIT 3, L");
-                        bit_r8(3, l, &mut f);
-                    }
-                    0x5E => {
-                        println!(" BIT 3, (HL)");
-                        bit_r8(3, memory.read_byte(u8_u8_to_u16(h, l)), &mut f);
-                    }
-                    0x5F => {
-                        println!(" BIT 3, A");
-                        bit_r8(3, a, &mut f);
-                    }
-                    0x60 => {
-                        println!(" BIT 4, B");
-                        bit_r8(4, b, &mut f);
-                    }
-                    0x61 => {
-                        println!(" BIT 4, C");
-                        bit_r8(4, c, &mut f);
-                    }
-                    0x62 => {
-                        println!(" BIT 4, D");
-                        bit_r8(4, d, &mut f);
-                    }
-                    0x63 => {
-                        println!(" BIT 4, E");
-                        bit_r8(4, e, &mut f);
-                    }
-                    0x64 => {
-                        println!(" BIT 4, H");
-                        bit_r8(4, h, &mut f);
-                    }
-                    0x65 => {
-                        println!(" BIT 4, L");
-                        bit_r8(4, l, &mut f);
-                    }
-                    0x66 => {
-                        println!(" BIT 4, (HL)");
-                        bit_r8(4, memory.read_byte(u8_u8_to_u16(h, l)), &mut f);
-                    }
-                    0x67 => {
-                        println!(" BIT 4, A");
-                        bit_r8(4, a, &mut f);
-                    }
-                    0x68 => {
-                        println!(" BIT 5, B");
-                        bit_r8(5, b, &mut f);
-                    }
-                    0x69 => {
-                        println!(" BIT 5, C");
-                        bit_r8(5, c, &mut f);
-                    }
-                    0x6A => {
-                        println!(" BIT 5, D");
-                        bit_r8(5, d, &mut f);
-                    }
-                    0x6B => {
-                        println!(" BIT 5, E");
-                        bit_r8(5, e, &mut f);
-                    }
-                    0x6C => {
-                        println!(" BIT 5, H");
-                        bit_r8(5, h, &mut f);
-                    }
-                    0x6D => {
-                        println!(" BIT 5, L");
-                        bit_r8(5, l, &mut f);
-                    }
-                    0x6E => {
-                        println!(" BIT 5, (HL)");
-                        bit_r8(5, memory.read_byte(u8_u8_to_u16(h, l)), &mut f);
-                    }
-                    0x6F => {
-                        println!(" BIT51, A");
-                        bit_r8(5, a, &mut f);
-                    }
-                    0x70 => {
-                        println!(" BIT 6, B");
-                        bit_r8(6, b, &mut f);
-                    }
-                    0x71 => {
-                        println!(" BIT 6, C");
-                        bit_r8(6, c, &mut f);
-                    }
-                    0x72 => {
-                        println!(" BIT 6, D");
-                        bit_r8(6, d, &mut f);
-                    }
-                    0x73 => {
-                        println!(" BIT 6, E");
-                        bit_r8(6, e, &mut f);
-                    }
-                    0x74 => {
-                        println!(" BIT 6, H");
-                        bit_r8(6, h, &mut f);
-                    }
-                    0x75 => {
-                        println!(" BIT 6, L");
-                        bit_r8(6, l, &mut f);
-                    }
-                    0x76 => {
-                        println!(" BIT 6, (HL)");
-                        bit_r8(6, memory.read_byte(u8_u8_to_u16(h, l)), &mut f);
-                    }
-                    0x77 => {
-                        println!(" BIT 6, A");
-                        bit_r8(6, a, &mut f);
-                    }
-                    0x78 => {
-                        println!(" BIT 7, B");
-                        bit_r8(7, b, &mut f);
-                    }
-                    0x79 => {
-                        println!(" BIT 7, C");
-                        bit_r8(7, c, &mut f);
-                    }
-                    0x7A => {
-                        println!(" BIT 7, D");
-                        bit_r8(7, d, &mut f);
-                    }
-                    0x7B => {
-                        println!(" BIT 7, E");
-                        bit_r8(7, e, &mut f);
-                    }
-                    0x7C => {
-                        println!(" BIT 7, H");
-                        bit_r8(7, h, &mut f);
-                    }
-                    0x7D => {
-                        println!(" BIT 7, L");
-                        bit_r8(7, l, &mut f);
-                    }
-                    0x7E => {
-                        println!(" BIT 7, (HL)");
-                        bit_r8(7, memory.read_byte(u8_u8_to_u16(h, l)), &mut f);
-                    }
-                    0x7F => {
-                        println!(" BIT57, A");
-                        bit_r8(7, a, &mut f);
+                    0xC0..=0xFF => {
+                        let bit = (cb_opcode >> 3) & 0b0111;
+                        let reg_name = reg_names[(cb_opcode & 0b0111) as usize];
+                        println!(" SET {bit}, {reg_name}");
+                        set_r8(bit, regs[(cb_opcode & 0b0111) as usize]);
                     }
                     _ => {
                         panic!("CB-opcode not implemented {:#04x}", cb_opcode);
@@ -1202,8 +959,8 @@ fn main() {
                 memory.write_word(sp, u8_u8_to_u16(d, e));
             }
             0xE0 => {
-                println!(" LDH (a8),A");
-                // LDH (n), A: Load from accumulator (direct 0xFF00+n)
+                println!(" LD (a8), A");
+                // LD (n), A: Load from accumulator (direct 0xFF00+n)
                 // Load to the address specified by the 8-bit immediate data n, data from the 8-bit A register. The
                 // full 16-bit absolute address is obtained by setting the most significant byte to 0xFF and the
                 // least significant byte to the value of n, so the possible range is 0xFF00-0xFFFF.
@@ -1241,7 +998,7 @@ fn main() {
                 xor_r8_a(nn, &mut a, &mut f);
             }
             0xF0 => {
-                println!(" LDH A, (a8)");
+                println!(" LD A, (a8)");
                 let nn = memory.read_byte(pc);
                 pc += 1;
                 let addr = 0xFF00 | nn as u16;
