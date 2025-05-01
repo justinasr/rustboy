@@ -79,33 +79,33 @@ impl CPU {
 
     fn set_zero_flag(&mut self, value: bool) {
         if value {
-            self.f |= 0b1000_0000;
+            self.f |= 1 << 7;
         } else {
-            self.f &= 0b0111_1111;
+            self.f &= !(1 << 7);
         }
     }
 
     fn set_subtraction_flag(&mut self, value: bool) {
         if value {
-            self.f |= 0b0100_0000;
+            self.f |= 1 << 6;
         } else {
-            self.f &= 0b1011_1111;
+            self.f &= !(1 << 6);
         }
     }
 
     fn set_half_carry_flag(&mut self, value: bool) {
         if value {
-            self.f |= 0b0010_0000;
+            self.f |= 1 << 5;
         } else {
-            self.f &= 0b1100_1111;
+            self.f &= !(1 << 5);
         }
     }
 
     fn set_carry_flag(&mut self, value: bool) {
         if value {
-            self.f |= 0b0001_0000;
+            self.f |= 1 << 4;
         } else {
-            self.f &= 0b1110_1111;
+            self.f &= !(1 << 4);
         }
     }
 
@@ -194,6 +194,24 @@ impl CPU {
         self.set_carry_flag(a < r);
     }
 
+    fn and_r8(&mut self, r: u8) -> u8 {
+        let a = self.a & r;
+        self.set_zero_flag(a == 0);
+        self.set_subtraction_flag(false);
+        self.set_half_carry_flag(false);
+        self.set_carry_flag(false);
+        a
+    }
+
+    fn or_r8(&mut self, r: u8) -> u8 {
+        let a = self.a | r;
+        self.set_zero_flag(a == 0);
+        self.set_subtraction_flag(false);
+        self.set_half_carry_flag(false);
+        self.set_carry_flag(false);
+        a
+    }
+
     // Instruction/operand loading
 
     fn load_byte(&mut self, memory: &Memory) -> u8 {
@@ -267,7 +285,7 @@ impl CPU {
         }
     }
 
-    fn get_reg(&mut self, memory: &Memory, i: u8) -> u8 {
+    fn get_reg(&self, memory: &Memory, i: u8) -> u8 {
         let hl = self.get_hl();
         match i {
             0 => self.b,
@@ -300,371 +318,382 @@ impl CPU {
 
     pub fn tick(&mut self, memory: &mut Memory) -> u8 {
         let opcode = self.load_byte(&memory);
-        print!("PC = {:#06x} | Opcode = {:#04x} |", self.pc, opcode);
+        // print!("[CPU] PC = {:#06x} | Opcode = {:#04x} |", self.pc, opcode);
         let cycles: u8;
 
         match opcode {
             0x00 => {
-                println!(" NOP");
-                cycles = 1;
+                // println!(" NOP");
+                cycles = 4;
             }
             0x01 => {
-                println!(" LD BC, d16");
+                // println!(" LD BC, d16");
                 let nn = self.load_word(memory);
                 self.set_bc(nn);
-                cycles = 3;
+                cycles = 12;
             }
             0x02 => {
-                println!(" LD (BC), A");
+                // println!(" LD (BC), A");
                 let addr = self.get_bc();
                 memory.write_byte(addr, self.a);
-                cycles = 2;
+                cycles = 8;
             }
             0x03 => {
-                println!(" INC BC");
+                // println!(" INC BC");
                 (self.b, self.c) = inc_r16(self.b, self.c);
-                cycles = 2;
+                cycles = 8;
             }
             0x04 => {
-                println!(" INC B");
+                // println!(" INC B");
                 self.b = self.inc_r8(self.b);
-                cycles = 1;
+                cycles = 4;
             }
             0x05 => {
-                println!(" DEC B");
+                // println!(" DEC B");
                 self.b = self.dec_r8(self.b);
-                cycles = 1;
+                cycles = 4;
             }
             0x06 => {
-                println!(" LD B, d8");
+                // print!(" LD B, d8");
                 self.b = self.load_byte(memory);
-                cycles = 2;
+                // println!("    | B = {:#04x}", self.b);
+                cycles = 8;
             }
             0x08 => {
-                println!(" LD (a16), SP");
+                // println!(" LD (a16), SP");
                 let addr = self.load_word(memory);
                 memory.write_word(addr, self.sp);
-                cycles = 5;
+                cycles = 20;
             }
             0x0A => {
-                println!(" LD A, (BC)");
+                // println!(" LD A, (BC)");
                 let addr = self.get_bc();
                 self.a = memory.read_byte(addr);
-                cycles = 2;
+                cycles = 8;
             }
             0x0B => {
-                println!(" DEC BC");
+                // println!(" DEC BC");
                 (self.b, self.c) = dec_r16(self.b, self.c);
-                cycles = 2;
+                cycles = 8;
             }
             0x0C => {
-                println!(" INC C");
+                // println!(" INC C");
                 self.c = self.inc_r8(self.c);
-                cycles = 1;
+                cycles = 4;
             }
             0x0D => {
-                println!(" DEC C");
+                // println!(" DEC C");
                 self.c = self.dec_r8(self.c);
-                cycles = 1;
+                cycles = 4;
             }
             0x0E => {
-                println!(" LD C, d8");
+                // println!(" LD C, d8");
                 self.c = self.load_byte(memory);
-                cycles = 2;
+                cycles = 8;
             }
             0x11 => {
-                println!(" LD DE, d16");
+                // println!(" LD DE, d16");
                 let nn = self.load_word(memory);
                 self.set_de(nn);
-                cycles = 3;
+                cycles = 12;
             }
             0x12 => {
-                println!(" LD (DE), A");
+                // println!(" LD (DE), A");
                 let addr = self.get_de();
                 memory.write_byte(addr, self.a);
-                cycles = 2;
+                cycles = 8;
             }
             0x13 => {
-                println!(" INC DE");
+                // println!(" INC DE");
                 (self.d, self.e) = inc_r16(self.d, self.e);
-                cycles = 2;
+                cycles = 8;
             }
             0x14 => {
-                println!(" INC D");
+                // println!(" INC D");
                 self.d = self.inc_r8(self.d);
-                cycles = 1;
+                cycles = 4;
             }
             0x15 => {
-                println!(" DEC D");
+                // println!(" DEC D");
                 self.d = self.dec_r8(self.d);
-                cycles = 1;
+                cycles = 4;
             }
             0x16 => {
-                println!(" LD D, d8");
+                // println!(" LD D, d8");
                 self.d = self.load_byte(memory);
-                cycles = 2;
+                cycles = 8;
             }
             0x17 => {
-                println!(" RLA");
+                // println!(" RLA");
                 self.a = self.rl_r8(self.a);
                 self.set_zero_flag(false);
-                cycles = 1;
+                cycles = 4;
             }
             0x18 => {
-                println!(" JR r8");
+                // println!(" JR r8");
                 // Relative jump
                 let nn = self.load_byte(memory) as i8 as i16;
                 self.pc = (self.pc as i16).wrapping_add(nn) as u16;
-                cycles = 3;
+                cycles = 12;
             }
             0x1A => {
-                println!(" LD A, (DE)");
+                // println!(" LD A, (DE)");
                 let addr = self.get_de();
                 self.a = memory.read_byte(addr);
-                cycles = 2;
+                cycles = 8;
             }
             0x1B => {
-                println!(" DEC DE");
+                // println!(" DEC DE");
                 (self.d, self.e) = dec_r16(self.d, self.e);
-                cycles = 2;
+                cycles = 8;
             }
             0x1C => {
-                println!(" INC E");
+                // println!(" INC E");
                 self.e = self.inc_r8(self.e);
-                cycles = 1;
+                cycles = 4;
             }
             0x1D => {
-                println!(" DEC E");
+                // println!(" DEC E");
                 self.e = self.dec_r8(self.e);
-                cycles = 1;
+                cycles = 4;
             }
             0x1E => {
-                println!(" LD E, d8");
+                // println!(" LD E, d8");
                 self.e = self.load_byte(memory);
-                cycles = 2;
+                cycles = 8;
             }
             0x20 => {
-                println!(" JR NZ, r8");
+                // print!(" JR NZ, r8");
                 let nn = self.load_byte(memory) as i8 as i16;
                 if !self.get_zero_flag() {
                     self.pc = (self.pc as i16).wrapping_add(nn) as u16;
-                    cycles = 3;
+                    // println!("  | JR NZ, {:#04x}    => JR NZ, {:#06x}", nn as u8, self.pc);
+                    cycles = 12;
                 } else {
-                    cycles = 2;
+                    // println!();
+                    cycles = 8;
                 }
             }
             0x21 => {
-                println!(" LD HL, d16");
+                // println!(" LD HL, d16");
                 let nn = self.load_word(memory);
                 self.set_hl(nn);
-                cycles = 3;
+                cycles = 12;
             }
             0x22 => {
-                println!(" LD (HL+), A");
+                // println!(" LD (HL+), A");
                 let addr = self.get_hl();
                 memory.write_byte(addr, self.a);
                 (self.h, self.l) = inc_r16(self.h, self.l);
-                cycles = 2;
+                cycles = 8;
             }
             0x23 => {
-                println!(" INC HL");
+                // println!(" INC HL");
                 (self.h, self.l) = inc_r16(self.h, self.l);
-                cycles = 2;
+                cycles = 8;
             }
             0x24 => {
-                println!(" INC H");
+                // println!(" INC H");
                 self.h = self.inc_r8(self.h);
-                cycles = 1;
+                cycles = 4;
             }
             0x25 => {
-                println!(" DEC H");
+                // println!(" DEC H");
                 self.h = self.dec_r8(self.h);
-                cycles = 1;
+                cycles = 4;
             }
             0x26 => {
-                println!(" LD H, d8");
+                // println!(" LD H, d8");
                 self.h = self.load_byte(memory);
-                cycles = 2;
+                cycles = 8;
             }
             0x28 => {
-                println!(" JR Z, r8");
+                // println!(" JR Z, r8");
                 let nn = self.load_byte(memory) as i8 as i16;
                 if self.get_zero_flag() {
                     self.pc = (self.pc as i16).wrapping_add(nn) as u16;
-                    cycles = 3;
+                    cycles = 12;
                 } else {
-                    cycles = 2;
+                    cycles = 8;
                 }
             }
             0x2A => {
-                println!(" LD A, (HL+)");
+                // println!(" LD A, (HL+)");
                 let addr = self.get_hl();
                 self.a = memory.read_byte(addr);
                 (self.h, self.l) = inc_r16(self.h, self.l);
-                cycles = 2;
+                cycles = 8;
             }
             0x2B => {
-                println!(" DEC HL");
+                // println!(" DEC HL");
                 (self.h, self.l) = dec_r16(self.h, self.l);
-                cycles = 2;
+                cycles = 8;
             }
             0x2C => {
-                println!(" INC L");
+                // println!(" INC L");
                 self.l = self.inc_r8(self.l);
-                cycles = 1;
+                cycles = 4;
             }
             0x2D => {
-                println!(" DEC L");
+                // println!(" DEC L");
                 self.l = self.dec_r8(self.l);
-                cycles = 1;
+                cycles = 4;
             }
             0x2E => {
-                println!(" LD L, d8");
+                // println!(" LD L, d8");
                 self.l = self.load_byte(memory);
-                cycles = 2;
+                cycles = 8;
             }
             0x31 => {
-                println!(" LD SP, d16");
+                // println!(" LD SP, d16");
                 self.sp = self.load_word(memory);
-                cycles = 3;
+                cycles = 12;
             }
             0x32 => {
-                println!(" LD (HL+), A");
+                // println!(" LD (HL+), A");
                 let addr = self.get_hl();
                 memory.write_byte(addr, self.a);
                 (self.h, self.l) = dec_r16(self.h, self.l);
-                cycles = 2;
+                cycles = 8;
             }
             0x33 => {
-                println!(" INC SP");
+                // println!(" INC SP");
                 self.sp = self.sp.wrapping_add(1);
-                cycles = 2;
+                cycles = 8;
             }
             0x34 => {
-                println!(" INC (HL)");
+                // println!(" INC (HL)");
                 let addr = self.get_hl();
                 let nn = self.inc_r8(memory.read_byte(addr));
                 memory.write_byte(addr, nn);
-                cycles = 1;
+                cycles = 4;
             }
             0x35 => {
-                println!(" DEC (HL)");
+                // println!(" DEC (HL)");
                 let addr = self.get_hl();
                 let nn = self.dec_r8(memory.read_byte(addr));
                 memory.write_byte(addr, nn);
-                cycles = 1;
+                cycles = 4;
             }
             0x36 => {
-                println!(" LD (HL), d8");
+                // println!(" LD (HL), d8");
                 let nn = self.load_byte(memory);
                 let addr = self.get_hl();
                 memory.write_byte(addr, nn);
-                cycles = 3;
+                cycles = 12;
             }
             0x3A => {
-                println!(" LD A, (HL-)");
+                // println!(" LD A, (HL-)");
                 let addr = self.get_hl();
                 self.a = memory.read_byte(addr);
                 (self.h, self.l) = dec_r16(self.h, self.l);
-                cycles = 2;
+                cycles = 8;
             }
             0x3B => {
-                println!(" DEC SP");
+                // println!(" DEC SP");
                 self.sp = self.sp.wrapping_sub(1);
-                cycles = 2;
+                cycles = 8;
             }
             0x3C => {
-                println!(" INC A");
+                // println!(" INC A");
                 self.a = self.inc_r8(self.a);
-                cycles = 1;
+                cycles = 4;
             }
             0x3D => {
-                println!(" DEC A");
+                // println!(" DEC A");
                 self.a = self.dec_r8(self.a);
-                cycles = 1;
+                cycles = 4;
             }
             0x3E => {
-                println!(" LD A, d8");
+                // println!(" LD A, d8");
                 self.a = self.load_byte(memory);
-                cycles = 2;
+                cycles = 8;
             }
             0x40..=0x75 | 0x77..=0x7F => {
                 let lhs_i = (opcode >> 3) & 0b0111; // Upper nibble divided by 8
                 let rhs_i = opcode & 0b0111; // Lower nibble
-                let lhs_reg_name = self.get_reg_name(lhs_i);
-                let rhs_reg_name = self.get_reg_name(rhs_i);
-                println!(" LD {lhs_reg_name}, {rhs_reg_name}");
+                // println!(" LD {}, {}",self.get_reg_name(lhs_i),self.get_reg_name(rhs_i));
                 if lhs_i == 6 {
                     *memory.get_cell(self.get_hl()) = self.get_reg(memory, rhs_i);
                 } else {
                     *self.get_mut_reg(lhs_i) = self.get_reg(memory, rhs_i);
                 }
-                cycles = if lhs_i == 6 || rhs_i == 6 { 2 } else { 1 };
+                cycles = if lhs_i == 6 || rhs_i == 6 { 8 } else { 4 };
             }
             0x76 => {
                 panic!("HALT");
             }
             0x80..=0x87 => {
                 let i = opcode & 0b0111; // Lower nibble
-                let reg_name = self.get_reg_name(i);
-                println!(" ADD A, {reg_name}");
+                // println!(" ADD A, {}", self.get_reg_name(i));
                 let nn = self.get_reg(memory, i);
                 self.a = self.add_r8(nn);
-                cycles = if i == 6 { 2 } else { 1 };
+                cycles = if i == 6 { 8 } else { 4 };
             }
             0x90..=0x97 => {
                 let i = opcode & 0b0111; // Lower nibble
-                let reg_name = self.get_reg_name(i);
-                println!(" SUB {reg_name}");
+                // println!(" SUB {}", self.get_reg_name(i));
                 let nn = self.get_reg(memory, i);
                 self.a = self.sub_r8(nn);
-                cycles = if i == 6 { 2 } else { 1 };
+                cycles = if i == 6 { 8 } else { 4 };
+            }
+            0xA0..=0xA7 => {
+                let i = opcode & 0b0111; // Lower nibble
+                // println!(" AND {}", self.get_reg_name(i));
+                let nn = self.get_reg(memory, i);
+                self.a = self.and_r8(nn);
+                cycles = if i == 6 { 8 } else { 4 };
             }
             0xA8..=0xAF => {
                 let i = opcode & 0b0111; // Lower nibble
-                let reg_name = self.get_reg_name(i);
-                println!(" XOR {reg_name}");
+                // println!(" XOR {}", self.get_reg_name(i));
                 let nn = self.get_reg(memory, i);
                 self.a = self.xor(nn);
-                cycles = if i == 6 { 2 } else { 1 };
+                cycles = if i == 6 { 8 } else { 4 };
+            }
+            0xB0..=0xB7 => {
+                let i = opcode & 0b0111; // Lower nibble
+                // println!(" OR {}", self.get_reg_name(i));
+                let nn = self.get_reg(memory, i);
+                self.a = self.or_r8(nn);
+                cycles = if i == 6 { 8 } else { 4 };
             }
             0xB8..=0xBF => {
                 let i = opcode & 0b0111; // Lower nibble
-                let reg_name = self.get_reg_name(i);
-                println!(" CP {reg_name}");
+                // println!(" CP {}", self.get_reg_name(i));
                 let nn = self.get_reg(memory, i);
                 self.cp_r8(nn);
-                cycles = if i == 6 { 2 } else { 1 };
+                cycles = if i == 6 { 8 } else { 4 };
             }
             0xC1 => {
-                println!(" POP BC");
+                // println!(" POP BC");
                 let nn = self.pop_word(memory);
                 self.set_bc(nn);
-                cycles = 3;
+                cycles = 12;
             }
             0xC3 => {
-                println!(" JP a16");
+                // println!(" JP a16");
                 self.pc = self.load_word(memory);
-                cycles = 4;
+                cycles = 16;
             }
             0xC5 => {
-                println!(" PUSH BC");
+                // print!(" PUSH BC");
                 self.push_word(memory, self.get_bc());
-                cycles = 4;
+                // println!("     | PUSH({:#06x})", self.get_bc());
+                cycles = 16;
             }
             0xC9 => {
-                println!(" RET");
+                // println!(" RET");
                 self.pc = self.pop_word(memory);
-                cycles = 4;
+                cycles = 16;
             }
             0xCB => {
                 let cb_opcode = self.load_byte(memory);
-                print!(" CB Opcode = {:#04x} |", cb_opcode);
+                // print!(" CB Opcode = {:#04x} |", cb_opcode);
                 let i = cb_opcode & 0b0111;
-                let reg_name = self.get_reg_name(i);
                 match cb_opcode {
                     0x10..=0x17 => {
-                        println!(" RL {reg_name}");
+                        // println!(" RL {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = self.rl_r8(nn);
@@ -674,13 +703,13 @@ impl CPU {
                     }
                     0x40..=0x7F => {
                         let bit = (cb_opcode >> 3) & 0b0111;
-                        println!(" BIT {bit}, {reg_name}");
+                        // println!(" BIT {bit}, {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         self.bit_r8(bit, nn);
                     }
                     0x80..=0xBF => {
                         let bit = (cb_opcode >> 3) & 0b0111;
-                        println!(" RES {bit}, {reg_name}");
+                        // println!(" RES {bit}, {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = res_r8(bit, nn);
@@ -690,7 +719,7 @@ impl CPU {
                     }
                     0xC0..=0xFF => {
                         let bit = (cb_opcode >> 3) & 0b0111;
-                        println!(" SET {bit}, {reg_name}");
+                        // println!(" SET {bit}, {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = set_r8(bit, nn);
@@ -702,30 +731,30 @@ impl CPU {
                         panic!("CB-opcode not implemented {:#04x}", cb_opcode);
                     }
                 }
-                cycles = if i == 6 { 4 } else { 2 }
+                cycles = if i == 6 { 16 } else { 8 }
             }
             0xCD => {
-                println!(" CALL a16");
+                // println!(" CALL a16");
                 // CALL nn: Call function
                 // Unconditional function call to the absolute address specified by the 16-bit operand nn.
                 let nn = self.load_word(memory);
                 self.push_word(memory, self.pc);
                 self.pc = nn;
-                cycles = 6;
+                cycles = 24;
             }
             0xD1 => {
-                println!(" POP DE");
+                // println!(" POP DE");
                 let nn = self.pop_word(memory);
                 self.set_de(nn);
-                cycles = 3;
+                cycles = 12;
             }
             0xD5 => {
-                println!(" PUSH DE");
+                // println!(" PUSH DE");
                 self.push_word(memory, self.get_de());
-                cycles = 4;
+                cycles = 16;
             }
             0xE0 => {
-                println!(" LD (a8), A");
+                // println!(" LD (a8), A");
                 // LD (n), A: Load from accumulator (direct 0xFF00+n)
                 // Load to the address specified by the 8-bit immediate data n, data from the 8-bit A register. The
                 // full 16-bit absolute address is obtained by setting the most significant byte to 0xFF and the
@@ -733,68 +762,107 @@ impl CPU {
                 let nn = self.load_byte(memory);
                 let addr = 0xFF00 | nn as u16;
                 memory.write_byte(addr, self.a);
-                cycles = 3;
+                cycles = 12;
             }
             0xE1 => {
-                println!(" POP HL");
+                // println!(" POP HL");
                 let nn = self.pop_word(memory);
                 self.set_hl(nn);
-                cycles = 3;
+                cycles = 12;
             }
             0xE2 => {
-                println!(" LD (C), A");
+                // println!(" LD (C), A");
                 let addr = 0xFF00 | (self.c as u16);
                 memory.write_byte(addr, self.a);
-                cycles = 2;
+                cycles = 8;
             }
             0xE5 => {
-                println!(" PUSH HL");
+                // println!(" PUSH HL");
                 self.push_word(memory, self.get_hl());
-                cycles = 4;
+                cycles = 16;
+            }
+            0xE6 => {
+                // println!(" AND d8");
+                let nn = self.load_byte(memory);
+                self.a &= nn;
+                self.set_zero_flag(self.a == 0);
+                self.set_subtraction_flag(false);
+                self.set_half_carry_flag(true);
+                self.set_carry_flag(false);
+                cycles = 8;
             }
             0xEA => {
-                println!(" LD (a16), A");
+                // println!(" LD (a16), A");
                 let nn = self.load_word(memory);
                 memory.write_byte(nn, self.a);
-                cycles = 4;
+                cycles = 16;
             }
             0xEE => {
-                println!(" XOR d8");
+                // println!(" XOR d8");
                 let nn = self.load_byte(memory);
                 self.a = self.xor(nn);
-                cycles = 2;
+                cycles = 8;
             }
             0xF0 => {
-                println!(" LD A, (a8)");
+                // print!(" LD A, (a8)");
                 let nn = self.load_byte(memory);
                 let addr = 0xFF00 | nn as u16;
                 self.a = memory.read_byte(addr);
-                cycles = 3;
+                // println!(" | LD A, ({:#06x}) => LD A, {:#04x}", addr, self.a);
+                cycles = 12;
             }
             0xF2 => {
-                println!(" LD A, (C)");
+                // println!(" LD A, (C)");
                 let addr = 0xFF00 | (self.c as u16);
                 self.a = memory.read_byte(addr);
-                cycles = 2;
+                cycles = 8;
             }
             0xF5 => {
-                println!(" PUSH AF");
+                // println!(" PUSH AF");
                 self.push_word(memory, self.get_af());
-                cycles = 4;
+                cycles = 16;
             }
             0xFE => {
-                println!(" CP d8");
+                // print!(" CP d8");
                 let nn = self.load_byte(memory);
+                // println!("      | CP {:#04x}", nn);
                 self.cp_r8(nn);
-                cycles = 2;
+                cycles = 8;
             }
             _ => {
-                println!(" ???");
+                // println!(" ???");
                 panic!("Opcode not implemented {:#04x}", opcode);
             }
         }
 
         cycles
+    }
+}
+
+struct PPU {
+    cycles: u64,
+    pixels: Vec<Vec<u8>>,
+}
+
+impl PPU {
+    pub fn new() -> PPU {
+        PPU {
+            cycles: 0,
+            pixels: vec![vec![0; 160]; 154],
+        }
+    }
+
+    pub fn tick(&mut self, memory: &mut Memory, cycles: u8) {
+        // println!("[PPU] Cycles {cycles} | LY: {}", memory.read_byte(0xFF44));
+
+        self.cycles += cycles as u64;
+
+        if self.cycles >= 456 {
+            // End of scanline
+            self.cycles -= 456;
+            let nn = (memory.read_byte(0xFF44) + 1) % 154;
+            memory.write_byte(0xFF44, nn);
+        }
     }
 }
 
@@ -828,13 +896,60 @@ fn inc_r16(msb: u8, lsb: u8) -> (u8, u8) {
     u16_to_u8_u8(u8_u8_to_u16(msb, lsb).wrapping_add(1))
 }
 
+fn dump_vram(memory: &Memory) {
+    for i in 0x8000..=(0x9FFF as u16) {
+        if i == 0x8000 {
+            println!("Tile data:");
+        } else if i == 0x9800 {
+            println!("Tile map 1:");
+        } else if i == 0x9C00 {
+            println!("Tile map 2:");
+        }
+        if i % 64 == 0 {
+            print!("{:#06x}   ", i);
+        }
+        print!("{:02x} ", memory.read_byte(i));
+        if i % 64 == 63 {
+            println!();
+        }
+    }
+}
+
+fn dump_tile_data(memory: &Memory) {
+    for tile_i in 0..384 {
+        let tile_addr = 0x8000 + tile_i * 16;
+        let tile_data: Vec<u16> = (0..8)
+            .map(|i| memory.read_word(tile_addr + i * 2))
+            .collect();
+        if !tile_data.iter().any(|i| *i > 0) {
+            continue;
+        }
+        println!("Tile {}", tile_i);
+        for tile_word in tile_data.iter() {
+            for pixel_i in 0..8 {
+                let pixel = ((tile_word >> (15 - pixel_i)) & 0b01)
+                    | (((tile_word >> (7 - pixel_i)) << 1) & 0b10);
+                match pixel {
+                    0 => print!(" "),
+                    1 => print!("░"),
+                    2 => print!("▒"),
+                    3 => print!("▓"),
+                    _ => unreachable!(),
+                };
+            }
+            println!();
+        }
+        println!();
+    }
+}
+
 fn main() {
     // RAM
     let ram: Vec<u8> = vec![0; 0xFFFF + 1];
 
     let bootrom_path = "boot.bin";
     let bootrom: Vec<u8> = std::fs::read(bootrom_path).unwrap();
-    let cartridge_path = "zelda.gb";
+    let cartridge_path = "tetris.gb";
     let cartridge: Vec<u8> = std::fs::read(cartridge_path).unwrap();
 
     let mut memory = Memory {
@@ -850,9 +965,70 @@ fn main() {
     // CPU
     let mut cpu = CPU::new();
 
+    // PPU
+    let mut ppu = PPU::new();
+
     let mut total_cycles: u64 = 0;
-    while total_cycles < 1_000_000 {
+    while total_cycles < 20_000_000 {
         let cycles = cpu.tick(&mut memory);
+        ppu.tick(&mut memory, cycles);
         total_cycles += cycles as u64;
+
+        // Wait for ROM to be done
+        // if memory.read_byte(0xFF50) != 0 {
+        //     println!("Bootrom done! Cycles: {total_cycles}");
+        //     break;
+        // }
+    }
+
+    dump_vram(&memory);
+    dump_tile_data(&memory);
+
+    let lcdc = memory.read_byte(0xFF40);
+    let mut pixels = vec![vec![' '; 256]; 256];
+    let tile_data_start = if lcdc & 0b0001_0000 != 0 {
+        0x8000 as u16
+    } else {
+        0x9000 as u16
+    };
+    // bit-3 BG tile map: 0 = 9800–9BFF; 1 = 9C00–9FFF
+    let tile_map_start = if lcdc & 0b0000_1000 != 0 {
+        0x9C00 as u16
+    } else {
+        0x9800 as u16
+    };
+    for bg_tile_row in 0..32 {
+        for bg_tile_col in 0..32 {
+            let tile_i = memory.read_byte(tile_map_start + bg_tile_row * 32 + bg_tile_col);
+            let tile_addr = (tile_data_start as i32
+                + if lcdc & 0b0001_0000 != 0 {
+                    ((tile_i as u16) * 16) as i32
+                } else {
+                    ((tile_i as i8 as i8) * 16) as i32
+                }) as u16;
+            for tile_row in 0..8 {
+                let tile_word = memory.read_word(tile_addr + tile_row * 2);
+                for tile_col in 0..8 {
+                    let pixel = ((tile_word >> (15 - tile_col)) & 0b01)
+                        | (((tile_word >> (7 - tile_col)) << 1) & 0b10);
+                    pixels[(bg_tile_row * 8 + tile_row) as usize]
+                        [(bg_tile_col * 8 + tile_col) as usize] = match pixel {
+                        0 => ' ',
+                        1 => '░',
+                        2 => '▒',
+                        3 => '▓',
+                        _ => unreachable!(),
+                    };
+                }
+            }
+        }
+        println!();
+    }
+
+    for row in 0..256 {
+        for col in 0..256 {
+            print!("{}", pixels[row as usize][col as usize]);
+        }
+        println!();
     }
 }
