@@ -1053,9 +1053,6 @@ impl CPU {
                             *self.get_mut_reg(i) = set_r8(bit, nn);
                         }
                     }
-                    _ => {
-                        panic!("CB-opcode not implemented {:#04x}", cb_opcode);
-                    }
                 }
                 cycles = if i == 6 { 16 } else { 8 }
             }
