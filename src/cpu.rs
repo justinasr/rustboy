@@ -610,7 +610,26 @@ impl CPU {
                 cycles = 8;
             }
             0x27 => {
-                println!(" DAA <NOT IMPLEMENTED>");
+                // println!(" DAA");
+                if self.get_subtraction_flag() {
+                    if self.get_carry_flag() {
+                        self.a = self.a.wrapping_sub(0x60);
+                    }
+                    if self.get_half_carry_flag() {
+                        self.a = self.a.wrapping_sub(0x06);
+                    }
+                } else {
+                    if self.get_carry_flag() || (self.a & 0xFF) > 0x99 {
+                        self.a = self.a.wrapping_add(0x60);
+                        self.set_carry_flag(true);
+                    }
+                    if self.get_half_carry_flag() || (self.a & 0x0F) > 0x09 {
+                        self.a = self.a.wrapping_add(0x06);
+                    }
+                }
+
+                self.set_zero_flag(self.a == 0);
+                self.set_half_carry_flag(false);
                 cycles = 4;
             }
             0x28 => {
