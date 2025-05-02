@@ -30,10 +30,10 @@ impl Memory {
     }
 
     pub fn write_byte(&mut self, addr: u16, value: u8) {
-        if addr < 0x8000 {
-            // I guess it is not supposed to write anything there?
-            panic!("Trying to write {:#04x} to {:#06x}", value, addr)
-        }
+        // if addr < 0x8000 {
+        //     // I guess it is not supposed to write anything there?
+        //     panic!("Trying to write {:#04x} to {:#06x}", value, addr)
+        // }
         self.memory[addr as usize] = value;
     }
 
