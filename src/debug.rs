@@ -80,9 +80,9 @@ pub fn dump_background(memory: &Memory) {
     }
 
     for row in 0..256 {
-        // if !pixels[row as usize].iter().any(|i| *i != ' ') {
-        //     continue;
-        // }
+        if !pixels[row as usize].iter().any(|i| *i != ' ') {
+            continue;
+        }
         for col in 0..256 {
             print!("{}", pixels[row as usize][col as usize]);
         }

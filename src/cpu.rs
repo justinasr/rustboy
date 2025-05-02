@@ -21,6 +21,10 @@ pub struct CPU {
     l: u8, // Register (L)
 
     ime: bool,
+
+    should_enable_ime: bool,
+    total_cycles: u16,
+    halt: bool,
 }
 
 impl CPU {
@@ -37,6 +41,9 @@ impl CPU {
             h: 0,
             l: 0,
             ime: false,
+            should_enable_ime: false,
+            total_cycles: 0,
+            halt: false,
         };
     }
 
@@ -388,9 +395,7 @@ impl CPU {
         }
     }
 
-    // Main function
-
-    pub fn tick(&mut self, memory: &mut Memory) -> u8 {
+    fn execute_instruction(&mut self, memory: &mut Memory) -> u8 {
         let opcode = self.load_byte(&memory);
         // print!("[CPU] PC = {:#06x} | Opcode = {:#04x} |", self.pc, opcode);
         let cycles: u8;
@@ -522,9 +527,10 @@ impl CPU {
                 cycles = 4;
             }
             0x18 => {
-                // println!(" JR r8");
+                // print!(" JR r8");
                 // Relative jump
                 let nn = self.load_byte(memory) as i8 as i16;
+                // println!("     | JR {nn}");
                 self.pc = (self.pc as i16).wrapping_add(nn) as u16;
                 cycles = 12;
             }
@@ -799,7 +805,11 @@ impl CPU {
                 cycles = if lhs_i == 6 || rhs_i == 6 { 8 } else { 4 };
             }
             0x76 => {
-                panic!("HALT");
+                // println!(" HALT");
+                self.ime = false;
+                self.should_enable_ime = false;
+                self.halt = true;
+                cycles = 4;
             }
             0x80..=0x87 => {
                 let i = opcode & 0b0111; // Lower nibble
@@ -1070,7 +1080,7 @@ impl CPU {
                 cycles = 24;
             }
             0xCE => {
-                // println!(" ADC A, d8", self.get_reg_name(i));
+                // println!(" ADC A, d8");
                 let nn = self.load_byte(memory);
                 self.a = self.adc_r8(nn);
                 cycles = 8;
@@ -1324,7 +1334,7 @@ impl CPU {
             }
             0xFB => {
                 // println!(" EI");
-                self.ime = true;
+                self.should_enable_ime = true;
                 cycles = 4;
             }
             0xFE => {
@@ -1344,6 +1354,111 @@ impl CPU {
                 // println!(" ???");
                 panic!("Opcode not implemented {:#04x}", opcode);
             }
+        }
+        cycles
+    }
+
+    fn handle_interrupts(&mut self, memory: &mut Memory) {
+        // FFFF - IE: Interrupt enable
+        let interrupt_enable = memory.read_byte(0xFFFF) & 0b0001_1111;
+        // FF0F — IF: Interrupt flag
+        let interrupt_flag = memory.read_byte(0xFF0F) & 0b0001_1111;
+
+        if self.halt && interrupt_enable & interrupt_flag != 0 {
+            self.halt = false;
+        }
+        if self.ime && (interrupt_flag & interrupt_enable & 0b0000_0001) != 0 {
+            // V-Blank interrupt requested
+            memory.write_byte(0xFF0F, interrupt_flag & !0b0000_0001);
+            self.ime = false;
+            self.push_word(memory, self.pc);
+            self.pc = 0x0040;
+        } else if self.ime && (interrupt_flag & interrupt_enable & 0b0000_0010) != 0 {
+            // LCD STAT interrupt requested
+            memory.write_byte(0xFF0F, interrupt_flag & !0b0000_0010);
+            self.ime = false;
+            self.push_word(memory, self.pc);
+            self.pc = 0x0048;
+        } else if self.ime && (interrupt_flag & interrupt_enable & 0b0000_0100) != 0 {
+            // Timer interrupt requested
+            memory.write_byte(0xFF0F, interrupt_flag & !0b0000_0100);
+            self.ime = false;
+            self.push_word(memory, self.pc);
+            self.pc = 0x0050;
+        } else if self.ime && (interrupt_flag & interrupt_enable & 0b0000_1000) != 0 {
+            // Serial interrupt requested
+            memory.write_byte(0xFF0F, interrupt_flag & !0b0000_1000);
+            self.ime = false;
+            self.push_word(memory, self.pc);
+            self.pc = 0x0058;
+        } else if self.ime && (interrupt_flag & interrupt_enable & 0b0001_0000) != 0 {
+            // Joypad interrupt requested
+            memory.write_byte(0xFF0F, interrupt_flag & !0b0001_0000);
+            self.ime = false;
+            self.push_word(memory, self.pc);
+            self.pc = 0x0060;
+        }
+    }
+
+    fn update_timer(&mut self, memory: &mut Memory, cycles: u8) {
+        // FF04 - DIV: Divider register
+        let div = memory.read_byte(0xFF04);
+        memory.write_byte(0xFF04, div.wrapping_add(cycles * 4));
+        // FF05 - TIMA: Timer counter
+        let tima = memory.read_byte(0xFF05);
+        // FF06 - TMA: Timer modulo
+        let tma = memory.read_byte(0xFF06);
+        // FF07 - TAC: Timer control
+        let tac = memory.read_byte(0xFF07);
+
+        let increment_every: u16 = if tac & 0b0000_0011 == 0b0000_0000 {
+            // Increment every 256 machine-cycles
+            256
+        } else if tac & 0b0000_0011 == 0b0000_0001 {
+            // Increment every 4 machine-cycles
+            4
+        } else if tac & 0b0000_0011 == 0b0000_0010 {
+            // Increment every 16 machine-cycles
+            16
+        } else {
+            // Increment every 64 machine-cycles
+            64
+        };
+
+        while self.total_cycles >= increment_every {
+            if tac & 0b0000_0100 != 0 {
+                // If increment is enabled
+                if tima == 0xFF {
+                    // Overflow - reset TIMA to TMA
+                    memory.write_byte(0xFF05, tma);
+                    // Request Timer interrupt
+                    let mut nn = memory.read_byte(0xFF0F);
+                    nn |= 0b0000_0100; // Bit 2
+                    memory.write_byte(0xFF0F, nn);
+                } else {
+                    memory.write_byte(0xFF05, tima + 1);
+                }
+            }
+            self.total_cycles -= increment_every;
+        }
+    }
+
+    // Main function
+
+    pub fn tick(&mut self, memory: &mut Memory) -> u8 {
+        let cycles = if !self.halt {
+            self.execute_instruction(memory)
+        } else {
+            4
+        };
+        self.total_cycles += cycles as u16;
+
+        self.update_timer(memory, cycles);
+        self.handle_interrupts(memory);
+
+        if self.should_enable_ime {
+            self.ime = true;
+            self.should_enable_ime = false;
         }
 
         cycles
