@@ -89,3 +89,38 @@ pub fn dump_background(memory: &Memory) {
         println!();
     }
 }
+
+pub fn dump_tile_data(memory: &Memory) {
+    let mut pixels = vec![vec![' '; 192]; 128];
+    for tile_row in 0..16 as u8 {
+        for tile_col in 0..24 as u8 {
+            let tile_addr = 0x8000 + (tile_row as u16 * 24 + tile_col as u16) * 16;
+            for y in 0..8 as u8 {
+                let tile_word = memory.read_word(tile_addr + y as u16 * 2);
+                for x in 0..8 as u8 {
+                    let xx = tile_col * 8 + x;
+                    let yy = tile_row * 8 + y;
+                    let pixel = ((tile_word >> (15 - x)) & 0b01)
+                        | (((tile_word >> (7 - x)) << 1) & 0b10);
+                    pixels[yy as usize][xx as usize] = match pixel {
+                        0 => ' ',
+                        1 => '░',
+                        2 => '▒',
+                        3 => '▓',
+                        _ => unreachable!(),
+                    };
+                }
+            }
+        }
+    }
+
+    for row in 0..128 {
+        if !pixels[row as usize].iter().any(|i| *i != ' ') {
+            continue;
+        }
+        for col in 0..192 {
+            print!("{}", pixels[row as usize][col as usize]);
+        }
+        println!();
+    }
+}

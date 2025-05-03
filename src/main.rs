@@ -8,7 +8,6 @@ mod ppu;
 mod utils;
 
 use cpu::CPU;
-use debug::dump_background;
 use memory::Memory;
 use ppu::PPU;
 
@@ -85,10 +84,9 @@ fn main() -> Result<(), Error> {
             }
 
             // Update internal state and request a redraw
-            for i in 0..10000 {
+            for i in 0..100000 {
                 gameboy.update();
             }
-            dump_background(&gameboy.memory);
             window.request_redraw();
         }
     });
