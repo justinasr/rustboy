@@ -40,7 +40,7 @@ impl CPU {
             e: 0,
             h: 0,
             l: 0,
-            ime: false,
+            ime: true,
             should_enable_ime: false,
             total_cycles: 0,
             halt: false,
@@ -806,8 +806,6 @@ impl CPU {
             }
             0x76 => {
                 // println!(" HALT");
-                self.ime = false;
-                self.should_enable_ime = false;
                 self.halt = true;
                 cycles = 4;
             }
@@ -1360,36 +1358,42 @@ impl CPU {
         let interrupt_enable = memory.read_byte(0xFFFF) & 0b0001_1111;
         // FF0F — IF: Interrupt flag
         let interrupt_flag = memory.read_byte(0xFF0F) & 0b0001_1111;
+        // println!("IME={} IE={:#010b} IF={:#010b} IE&IF={:#010b}", self.ime, interrupt_enable, interrupt_flag, interrupt_enable & interrupt_flag);
 
         if self.halt && interrupt_enable & interrupt_flag != 0 {
             self.halt = false;
         }
         if self.ime && (interrupt_flag & interrupt_enable & 0b0000_0001) != 0 {
             // V-Blank interrupt requested
+            // println!("Handling VBlank interrupt");
             memory.write_byte(0xFF0F, interrupt_flag & !0b0000_0001);
             self.ime = false;
             self.push_word(memory, self.pc);
             self.pc = 0x0040;
         } else if self.ime && (interrupt_flag & interrupt_enable & 0b0000_0010) != 0 {
             // LCD STAT interrupt requested
+            // println!("Handling STAT interrupt");
             memory.write_byte(0xFF0F, interrupt_flag & !0b0000_0010);
             self.ime = false;
             self.push_word(memory, self.pc);
             self.pc = 0x0048;
         } else if self.ime && (interrupt_flag & interrupt_enable & 0b0000_0100) != 0 {
             // Timer interrupt requested
+            // println!("Handling timer interrupt");
             memory.write_byte(0xFF0F, interrupt_flag & !0b0000_0100);
             self.ime = false;
             self.push_word(memory, self.pc);
             self.pc = 0x0050;
         } else if self.ime && (interrupt_flag & interrupt_enable & 0b0000_1000) != 0 {
             // Serial interrupt requested
+            // println!("Handling serial interrupt");
             memory.write_byte(0xFF0F, interrupt_flag & !0b0000_1000);
             self.ime = false;
             self.push_word(memory, self.pc);
             self.pc = 0x0058;
         } else if self.ime && (interrupt_flag & interrupt_enable & 0b0001_0000) != 0 {
             // Joypad interrupt requested
+            // println!("Handling joypad interrupt");
             memory.write_byte(0xFF0F, interrupt_flag & !0b0001_0000);
             self.ime = false;
             self.push_word(memory, self.pc);
@@ -1443,6 +1447,8 @@ impl CPU {
     // Main function
 
     pub fn tick(&mut self, memory: &mut Memory) -> u8 {
+        self.handle_interrupts(memory);
+
         let cycles = if !self.halt {
             self.execute_instruction(memory)
         } else {
@@ -1451,7 +1457,6 @@ impl CPU {
         self.total_cycles += cycles as u16;
 
         self.update_timer(memory, cycles);
-        self.handle_interrupts(memory);
 
         if self.should_enable_ime {
             self.ime = true;

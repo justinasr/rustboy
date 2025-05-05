@@ -1,6 +1,3 @@
-#![deny(clippy::all)]
-#![forbid(unsafe_code)]
-
 mod cpu;
 mod debug;
 mod memory;
@@ -10,6 +7,7 @@ mod utils;
 use cpu::CPU;
 use memory::Memory;
 use ppu::PPU;
+use debug::*;
 
 use error_iter::ErrorIter as _;
 use log::error;
@@ -28,6 +26,8 @@ struct Gameboy {
     memory: Memory,
     cpu: CPU,
     ppu: PPU,
+
+    paused: bool,
 }
 
 fn main() -> Result<(), Error> {
@@ -37,7 +37,7 @@ fn main() -> Result<(), Error> {
     let window = {
         let size = LogicalSize::new(WIDTH as f64, HEIGHT as f64);
         WindowBuilder::new()
-            .with_title("Hello Pixels")
+            .with_title("My Gameboy Emulator")
             .with_inner_size(size)
             .with_min_inner_size(size)
             .build(&event_loop)
@@ -72,6 +72,15 @@ fn main() -> Result<(), Error> {
             if input.key_pressed(KeyCode::Escape) || input.close_requested() {
                 elwt.exit();
                 return;
+            } else if input.key_pressed(KeyCode::Space) {
+                gameboy.paused = !gameboy.paused;
+            } else if input.key_pressed(KeyCode::KeyC) {
+                println!("TILES:");
+                dump_tile_data(&gameboy.memory);
+                println!("VRAM");
+                dump_vram(&gameboy.memory);
+                println!("BACKGROUND");
+                dump_background(&gameboy.memory);
             }
 
             // Resize the window
@@ -84,8 +93,10 @@ fn main() -> Result<(), Error> {
             }
 
             // Update internal state and request a redraw
-            for i in 0..100000 {
-                gameboy.update();
+            if !gameboy.paused {
+                for _ in 0..10000 {
+                    gameboy.update();
+                }
             }
             window.request_redraw();
         }
@@ -117,7 +128,12 @@ impl Gameboy {
 
         // PPU
         let ppu = PPU::new();
-        Self { memory, cpu, ppu }
+        Self {
+            memory,
+            cpu,
+            ppu,
+            paused: false,
+        }
     }
 
     fn update(&mut self) {

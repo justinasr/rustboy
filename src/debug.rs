@@ -1,12 +1,12 @@
 use super::memory::Memory;
 
-pub fn dump_memory_range(memory: &Memory, from: u16, to: u16) {
+pub fn dump_memory_range(memory: &Memory, from: u16, to: u16, break_every: u16) {
     for i in from..=to {
-        if i % 64 == 0 {
+        if i % break_every == 0 {
             print!("{:#06x}   ", i);
         }
         print!("{:02x} ", memory.read_byte(i));
-        if i % 64 == 63 {
+        if i % break_every == break_every - 1 {
             println!();
         }
     }
@@ -14,11 +14,11 @@ pub fn dump_memory_range(memory: &Memory, from: u16, to: u16) {
 
 pub fn dump_vram(memory: &Memory) {
     println!("Tile data:");
-    dump_memory_range(memory, 0x8000, 0x9FFF);
+    dump_memory_range(memory, 0x8000, 0x97FF, 64);
     println!("Tile map 1:");
-    dump_memory_range(memory, 0x9800, 0x9BFF);
+    dump_memory_range(memory, 0x9800, 0x9BFF, 32);
     println!("Tile map 2:");
-    dump_memory_range(memory, 0x9C00, 0x9FFF);
+    dump_memory_range(memory, 0x9C00, 0x9FFF, 32);
 }
 
 pub fn dump_tile(memory: &Memory, addr: u16) {
@@ -38,25 +38,41 @@ pub fn dump_tile(memory: &Memory, addr: u16) {
     }
 }
 
+fn get_tile_data_start(memory: &Memory) -> u16 {
+    let lcdc = memory.read_byte(0xFF40);
+    //  Bit 4 - BG & Window Tile Data Select
+    //  0: $8800-$97FF
+    //  1: $8000-$8FFF <- Same area as OBJ
+    if lcdc & 0b0001_0000 == 0 {
+        0x9000 as u16
+    } else {
+        0x8000 as u16
+    }
+}
+
+fn get_tile_map_start(memory: &Memory) -> u16 {
+    let lcdc = memory.read_byte(0xFF40);
+    //  Bit 3 - BG Tile Map Display Select
+    //  0: $9800-$9BFF
+    //  1: $9C00-$9FFF
+    if lcdc & 0b0000_1000 == 0 {
+        0x9800 as u16
+    } else {
+        0x9C00 as u16
+    }
+}
+
 pub fn dump_background(memory: &Memory) {
     let lcdc = memory.read_byte(0xFF40);
     let mut pixels = vec![vec![' '; 256]; 256];
-    let tile_data_start = if lcdc & 0b0001_0000 != 0 {
-        0x8000 as u16
-    } else {
-        0x9000 as u16
-    };
-    // bit-3 BG tile map: 0 = 9800–9BFF; 1 = 9C00–9FFF
-    let tile_map_start = if lcdc & 0b0000_1000 != 0 {
-        0x9C00 as u16
-    } else {
-        0x9800 as u16
-    };
+
+    let tile_data_start = get_tile_data_start(memory);
+    let tile_map_start = get_tile_map_start(memory);
     for bg_tile_row in 0..32 {
         for bg_tile_col in 0..32 {
             let tile_i = memory.read_byte(tile_map_start + bg_tile_row * 32 + bg_tile_col);
             let tile_addr = (tile_data_start as i32
-                + if lcdc & 0b0001_0000 != 0 {
+                + if lcdc & 0b0001_0000 == 0 {
                     ((tile_i as i32) * 16) as i32
                 } else {
                     ((tile_i as u8 as i32) * 16) as i32
@@ -91,17 +107,25 @@ pub fn dump_background(memory: &Memory) {
 }
 
 pub fn dump_tile_data(memory: &Memory) {
-    let mut pixels = vec![vec![' '; 192]; 128];
-    for tile_row in 0..16 as u8 {
-        for tile_col in 0..24 as u8 {
+    let lcdc = memory.read_byte(0xFF40);
+
+    let tile_data_start = get_tile_data_start(memory);
+    let tile_map_start = get_tile_map_start(memory);
+    println!("LCDC            {:#010b}", lcdc);
+    println!("Tile data start {:#06x}", tile_data_start,);
+    println!("Tile map start  {:#06x}", tile_map_start);
+
+    let mut pixels = vec![vec![' '; 256]; 96];
+    for tile_row in 0..12 as u8 {
+        for tile_col in 0..32 as u8 {
             let tile_addr = 0x8000 + (tile_row as u16 * 24 + tile_col as u16) * 16;
             for y in 0..8 as u8 {
                 let tile_word = memory.read_word(tile_addr + y as u16 * 2);
                 for x in 0..8 as u8 {
                     let xx = tile_col * 8 + x;
                     let yy = tile_row * 8 + y;
-                    let pixel = ((tile_word >> (15 - x)) & 0b01)
-                        | (((tile_word >> (7 - x)) << 1) & 0b10);
+                    let pixel =
+                        ((tile_word >> (15 - x)) & 0b01) | (((tile_word >> (7 - x)) << 1) & 0b10);
                     pixels[yy as usize][xx as usize] = match pixel {
                         0 => ' ',
                         1 => '░',
@@ -114,11 +138,18 @@ pub fn dump_tile_data(memory: &Memory) {
         }
     }
 
-    for row in 0..128 {
+    for row in 0..96 {
+        if row % 8 == 0 {
+            let addr = 0x8000 + (row / 8) * 256;
+            println!("");
+        }
         if !pixels[row as usize].iter().any(|i| *i != ' ') {
             continue;
         }
-        for col in 0..192 {
+        for col in 0..256 {
+            if col % 8 == 0 {
+                print!(" | ");
+            }
             print!("{}", pixels[row as usize][col as usize]);
         }
         println!();

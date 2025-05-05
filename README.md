@@ -9,3 +9,4 @@
 - DAA implementation: https://gbdev.gg8.se/wiki/articles/DAA
 - Interrupts: https://gbdev.gg8.se/wiki/articles/Interrupts
 - DMG-01: How to Emulate a Game Boy: https://rylev.github.io/DMG-01/public/book/introduction.html
+- DMG-ACID2: https://github.com/mattcurrie/dmg-acid2
