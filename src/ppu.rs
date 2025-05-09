@@ -57,7 +57,6 @@ impl PPU {
             } else {
                 0x9C00 as u16
             };
-            // // println!("Draw line {:03}, lcdc={:#010b}, tile_data_start={:#06x}, tile_map_start={:#06x}", ly, lcdc, tile_data_start, tile_map_start);
 
             // FF42 - SCY: Background viewport Y position
             // FF43 - SCX: Background viewport X position

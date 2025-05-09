@@ -1,6 +1,20 @@
 use super::memory::Memory;
 use super::utils::*;
 
+// macro_rules! cpulogln {
+//     ($($arg:tt)*) => (print!($($arg)*);print!("\n"));
+// }
+// macro_rules! cpulog {
+//     ($($arg:tt)*) => (print!($($arg)*));
+// }
+
+macro_rules! cpulogln {
+    ($($arg:tt)*) => {};
+}
+macro_rules! cpulog {
+    ($($arg:tt)*) => {};
+}
+
 pub struct CPU {
     pc: u16, // Program Counter (PC)
     sp: u16, // Stack Pointer (SP)
@@ -21,7 +35,6 @@ pub struct CPU {
     l: u8, // Register (L)
 
     ime: bool,
-
     should_enable_ime: bool,
     total_cycles: u16,
     halt: bool,
@@ -99,74 +112,63 @@ impl CPU {
 
     // Instructions
 
+    /** Decrement 8-bit value. Set Z, H and N flags. */
     fn dec_r8(&mut self, r: u8) -> u8 {
-        // If lower nibble is 0, it will carry from upper nibble
-        self.set_half_carry_flag((r & 0x0F) == 0);
         let rr = r.wrapping_sub(1);
         self.set_zero_flag(rr == 0);
         self.set_subtraction_flag(true);
+        // If lower nibble is 0, it will carry from upper nibble
+        self.set_half_carry_flag((r & 0x0F) == 0);
         rr
     }
 
+    /** Increment 8-bit value. Set Z, H and N flags. */
     fn inc_r8(&mut self, r: u8) -> u8 {
-        // If lower nibble is 0b1111, adding 1 will move to upper nibble
-        self.set_half_carry_flag((r & 0x0F) == 0x0F);
         let rr = r.wrapping_add(1);
         self.set_zero_flag(rr == 0);
         self.set_subtraction_flag(false);
+        // If lower nibble is 0xF, adding 1 will move to upper nibble
+        self.set_half_carry_flag((r & 0x0F) == 0x0F);
         rr
     }
 
-    /** XOR given value with A register. */
-    fn xor(&mut self, r: u8) -> u8 {
-        let a = self.a ^ r;
-        self.set_zero_flag(a == 0);
-        self.set_subtraction_flag(false);
-        self.set_half_carry_flag(false);
-        self.set_carry_flag(false);
-        a
-    }
-
-    /** Rotate bits in given register left, through the carry flag. */
+    /** Rotate bits in given value left, through the carry flag. */
     fn rl_r8(&mut self, r: u8) -> u8 {
-        let c = if self.get_carry_flag() { 1 } else { 0 };
-        self.set_carry_flag(r & 0b1000_0000 != 0);
-        let mut rr = r << 1;
-        rr |= c;
+        let rr = (r << 1) | if self.get_carry_flag() { 1 } else { 0 };
         self.set_zero_flag(rr == 0);
         self.set_subtraction_flag(false);
         self.set_half_carry_flag(false);
+        self.set_carry_flag(r & 0x80 != 0);
         rr
     }
 
+    /** Rotate bits in given value right, through the carry flag. */
     fn rr_r8(&mut self, r: u8) -> u8 {
-        let c = if self.get_carry_flag() { 1 } else { 0 };
-        self.set_carry_flag(r & 0b0000_0001 != 0);
-        let mut rr = r >> 1;
-        rr |= c << 7;
+        let rr = (r >> 1) | if self.get_carry_flag() { 1 << 7 } else { 0 };
         self.set_zero_flag(rr == 0);
         self.set_subtraction_flag(false);
         self.set_half_carry_flag(false);
+        self.set_carry_flag(r & 0x01 != 0);
         rr
     }
 
     /** Shift left into carry, LSB is set to 0. */
     fn sla_r8(&mut self, r: u8) -> u8 {
-        self.set_carry_flag(r & 0b1000_0000 != 0);
-        let rr = (r << 1) & 0b1111_1110;
+        let rr = (r << 1) & 0xFE;
         self.set_zero_flag(rr == 0);
         self.set_half_carry_flag(false);
         self.set_subtraction_flag(false);
+        self.set_carry_flag(r & 0x80 != 0);
         rr
     }
 
-    /** Shift right into carry, MSB does not change */
+    /** Shift right into carry, MSB does not change. */
     fn sra_r8(&mut self, r: u8) -> u8 {
-        self.set_carry_flag(r & 0b0000_0001 != 0);
-        let rr = (r >> 1) | (r & 0b1000_0000);
+        let rr = (r >> 1) | (r & 0x80);
         self.set_zero_flag(rr == 0);
         self.set_half_carry_flag(false);
         self.set_subtraction_flag(false);
+        self.set_carry_flag(r & 0x01 != 0);
         rr
     }
 
@@ -177,57 +179,58 @@ impl CPU {
         self.set_half_carry_flag(true);
     }
 
+    /** Subtract given value from register A value. */
     fn sub_r8(&mut self, r: u8) -> u8 {
-        let mut a = self.a;
-        self.set_half_carry_flag((a & 0x0F) < (r & 0x0F));
-        self.set_carry_flag(a < r);
-        a = a.wrapping_sub(r);
+        let a = self.a.wrapping_sub(r);
         self.set_zero_flag(a == 0);
         self.set_subtraction_flag(true);
+        self.set_half_carry_flag((self.a & 0x0F) < (r & 0x0F));
+        self.set_carry_flag(self.a < r);
         a
     }
 
+    /** Subtract given value from register A value with carry. */
     fn sbc_r8(&mut self, r: u8) -> u8 {
-        let mut a = self.a;
         let c = if self.get_carry_flag() { 1 } else { 0 };
-        self.set_half_carry_flag((a & 0x0F) < ((r & 0x0F) + c));
-        self.set_carry_flag((a as u16) < (r as u16) + (c as u16));
-        a = a.wrapping_sub(r).wrapping_sub(c);
+        let a = self.a.wrapping_sub(r).wrapping_sub(c);
         self.set_zero_flag(a == 0);
         self.set_subtraction_flag(true);
+        self.set_half_carry_flag((self.a & 0x0F) < ((r & 0x0F) + c));
+        self.set_carry_flag((self.a as u16) < (r as u16) + (c as u16));
         a
     }
 
+    /** Add given value to register A value. */
     fn add_r8(&mut self, r: u8) -> u8 {
-        let mut a = self.a;
-        self.set_half_carry_flag((a & 0x0F) + (r & 0x0F) > 0x0F);
-        self.set_carry_flag((a as u16) + (r as u16) > 0xFF);
-        a = a.wrapping_add(r);
+        let a = self.a.wrapping_add(r);
         self.set_zero_flag(a == 0);
         self.set_subtraction_flag(false);
+        self.set_half_carry_flag((self.a & 0x0F) + (r & 0x0F) > 0x0F);
+        self.set_carry_flag((self.a as u16) + (r as u16) > 0xFF);
         a
     }
 
+    /** Add given word to HL register value. */
     fn add_r16(&mut self, rr: u16) -> u16 {
-        let mut hl = self.get_hl();
-        self.set_half_carry_flag((hl & 0x0FFF) + (rr & 0x0FFF) > 0x0FFF);
-        self.set_carry_flag((hl as u32) + (rr as u32) > 0xFFFF);
-        hl = hl.wrapping_add(rr);
+        let hl = self.get_hl().wrapping_add(rr);
         self.set_subtraction_flag(false);
+        self.set_half_carry_flag((self.get_hl() & 0x0FFF) + (rr & 0x0FFF) > 0x0FFF);
+        self.set_carry_flag((self.get_hl() as u32) + (rr as u32) > 0xFFFF);
         hl
     }
 
+    /** Add given value with carry to register A value. */
     fn adc_r8(&mut self, r: u8) -> u8 {
-        let mut a = self.a;
         let c = if self.get_carry_flag() { 1 } else { 0 };
-        self.set_half_carry_flag((a & 0x0F) + (r & 0x0F) + c > 0x0F);
-        self.set_carry_flag((a as u16) + (r as u16) + (c as u16) > 0xFF);
-        a = a.wrapping_add(r).wrapping_add(c);
+        let a = self.a.wrapping_add(r).wrapping_add(c);
         self.set_zero_flag(a == 0);
         self.set_subtraction_flag(false);
+        self.set_half_carry_flag((self.a & 0x0F) + (r & 0x0F) + c > 0x0F);
+        self.set_carry_flag((self.a as u16) + (r as u16) + (c as u16) > 0xFF);
         a
     }
 
+    /** Compare given value with register A value and set the flags. */
     fn cp_r8(&mut self, r: u8) {
         let a = self.a;
         self.set_zero_flag(a == r);
@@ -236,6 +239,7 @@ impl CPU {
         self.set_carry_flag(a < r);
     }
 
+    /** Bitwise AND given value with register A value. */
     fn and_r8(&mut self, r: u8) -> u8 {
         let a = self.a & r;
         self.set_zero_flag(a == 0);
@@ -245,6 +249,7 @@ impl CPU {
         a
     }
 
+    /** Bitwise OR given value with register A value. */
     fn or_r8(&mut self, r: u8) -> u8 {
         let a = self.a | r;
         self.set_zero_flag(a == 0);
@@ -254,6 +259,17 @@ impl CPU {
         a
     }
 
+    /** XOR given value with A register. Set Z flag. Reset N, H, C flags. */
+    fn xor(&mut self, r: u8) -> u8 {
+        let a = self.a ^ r;
+        self.set_zero_flag(a == 0);
+        self.set_subtraction_flag(false);
+        self.set_half_carry_flag(false);
+        self.set_carry_flag(false);
+        a
+    }
+
+    /** Swap the nibbles of given value and set the flags. */
     fn swap_r8(&mut self, r: u8) -> u8 {
         self.set_zero_flag(r == 0);
         self.set_subtraction_flag(false);
@@ -397,226 +413,235 @@ impl CPU {
 
     fn execute_instruction(&mut self, memory: &mut Memory) -> u8 {
         let opcode = self.load_byte(&memory);
-        // print!("[CPU] PC = {:#06x} | Opcode = {:#04x} |", self.pc, opcode);
+        if opcode != 0xCB {
+            cpulog!(
+                "[CPU] PC = {:#06x} | {:#04x}   | ",
+                self.pc.wrapping_sub(1),
+                opcode
+            );
+        }
         let cycles: u8;
 
         match opcode {
             0x00 => {
-                // println!(" NOP");
+                cpulogln!("NOP");
                 cycles = 4;
             }
             0x01 => {
-                // println!(" LD BC, d16");
                 let nn = self.load_word(memory);
+                cpulogln!("LD BC, d16     | LD BC {:#06x}", nn);
                 self.set_bc(nn);
                 cycles = 12;
             }
             0x02 => {
-                // println!(" LD (BC), A");
                 let addr = self.get_bc();
+                cpulogln!("LD (BC), A     | LD ({:#06x}), {:#04x}", addr, self.a);
                 memory.write_byte(addr, self.a);
                 cycles = 8;
             }
             0x03 => {
-                // println!(" INC BC");
+                cpulogln!("INC BC         | INC {:#06x}", self.get_bc());
                 (self.b, self.c) = inc_r16(self.b, self.c);
                 cycles = 8;
             }
             0x04 => {
-                // println!(" INC B");
+                cpulogln!("INC B          | INC {:#04x}", self.b);
                 self.b = self.inc_r8(self.b);
                 cycles = 4;
             }
             0x05 => {
-                // println!(" DEC B");
+                cpulogln!("DEC B          | DEC {:#04x}", self.b);
                 self.b = self.dec_r8(self.b);
                 cycles = 4;
             }
             0x06 => {
-                // print!(" LD B, d8");
                 self.b = self.load_byte(memory);
-                // println!("    | B = {:#04x}", self.b);
+                cpulogln!("LD B, d8       | LD B, {:#04x}", self.b);
                 cycles = 8;
             }
             0x07 => {
-                // println!(" RLCA");
+                cpulogln!("RLCA");
                 self.a = self.rlc_r8(self.a);
                 self.set_zero_flag(false);
                 cycles = 4;
             }
             0x08 => {
-                // println!(" LD (a16), SP");
                 let addr = self.load_word(memory);
+                cpulogln!("LD (a16), SP   | LD ({:#06x}), {:#06x}", addr, self.sp);
                 memory.write_word(addr, self.sp);
                 cycles = 20;
             }
             0x09 => {
-                // println!(" ADD HL, BC");
+                cpulogln!("ADD HL, BC     | ADD HL, {:#06x}", self.get_bc());
                 let hl = self.add_r16(self.get_bc());
                 self.set_hl(hl);
                 cycles = 8;
             }
             0x0A => {
-                // println!(" LD A, (BC)");
                 let addr = self.get_bc();
+                cpulogln!("LD A, (BC)     | LD A, ({:#06x})", addr);
                 self.a = memory.read_byte(addr);
                 cycles = 8;
             }
             0x0B => {
-                // println!(" DEC BC");
+                cpulogln!("DEC BC         | DEC {:#06x}", self.get_bc());
                 (self.b, self.c) = dec_r16(self.b, self.c);
                 cycles = 8;
             }
             0x0C => {
-                // println!(" INC C");
+                cpulogln!("INC C          | INC {:#04x}", self.c);
                 self.c = self.inc_r8(self.c);
                 cycles = 4;
             }
             0x0D => {
-                // println!(" DEC C");
+                cpulogln!("DEC C          | DEC C {:#04x}", self.c);
                 self.c = self.dec_r8(self.c);
                 cycles = 4;
             }
             0x0E => {
-                // println!(" LD C, d8");
                 self.c = self.load_byte(memory);
+                cpulogln!("LD C, d8       | LD C, {:#04x}", self.c);
                 cycles = 8;
             }
             0x0F => {
-                // println!(" RRCA");
+                cpulogln!("RRCA");
                 self.a = self.rrc_r8(self.a);
                 self.set_zero_flag(false);
                 cycles = 4;
             }
+            0x10 => {
+                cpulogln!("STOP");
+                self.halt = true;
+                cycles = 4;
+            }
             0x11 => {
-                // println!(" LD DE, d16");
                 let nn = self.load_word(memory);
+                cpulogln!("LD DE, d16     | LD DE, {:#06x}", nn);
                 self.set_de(nn);
                 cycles = 12;
             }
             0x12 => {
-                // println!(" LD (DE), A");
                 let addr = self.get_de();
+                cpulogln!("LD (DE), A     | LD ({:#06x}), {:#04x}", addr, self.a);
                 memory.write_byte(addr, self.a);
                 cycles = 8;
             }
             0x13 => {
-                // println!(" INC DE");
+                cpulogln!("DEC DE         | INC DE {:#06x}", self.get_de());
                 (self.d, self.e) = inc_r16(self.d, self.e);
                 cycles = 8;
             }
             0x14 => {
-                // println!(" INC D");
+                cpulogln!("INC D          | INC {:#04x}", self.d);
                 self.d = self.inc_r8(self.d);
                 cycles = 4;
             }
             0x15 => {
-                // println!(" DEC D");
+                cpulogln!("DEC D          | DEC {:#04x}", self.d);
                 self.d = self.dec_r8(self.d);
                 cycles = 4;
             }
             0x16 => {
-                // println!(" LD D, d8");
                 self.d = self.load_byte(memory);
+                cpulogln!("LD D, d8       | LD D, {:#04x}", self.d);
                 cycles = 8;
             }
             0x17 => {
-                // println!(" RLA");
+                cpulogln!("RLA");
                 self.a = self.rl_r8(self.a);
                 self.set_zero_flag(false);
                 cycles = 4;
             }
             0x18 => {
-                // print!(" JR r8");
-                // Relative jump
-                let nn = self.load_byte(memory) as i8 as i16;
-                // println!("     | JR {nn}");
-                self.pc = (self.pc as i16).wrapping_add(nn) as u16;
+                let nn = self.load_byte(memory);
+                cpulogln!("JR r8          | JR {:#04x}", nn);
+                self.pc = (self.pc as i16).wrapping_add(nn as i8 as i16) as u16;
                 cycles = 12;
             }
             0x19 => {
-                // println!(" ADD HL, DE");
+                cpulogln!("ADD HL, DE     | ADD HL, {:#06x}", self.get_hl());
                 let hl = self.add_r16(self.get_de());
                 self.set_hl(hl);
                 cycles = 8;
             }
             0x1A => {
-                // println!(" LD A, (DE)");
+                cpulogln!("LD A, (DE)     | LD A, ({:#06x})", self.get_de());
                 let addr = self.get_de();
                 self.a = memory.read_byte(addr);
                 cycles = 8;
             }
             0x1B => {
-                // println!(" DEC DE");
+                cpulogln!("DEC DE         | DEC {:#06x}", self.get_de());
                 (self.d, self.e) = dec_r16(self.d, self.e);
                 cycles = 8;
             }
             0x1C => {
-                // println!(" INC E");
+                cpulogln!("INC E          | INC {:#04x}", self.e);
                 self.e = self.inc_r8(self.e);
                 cycles = 4;
             }
             0x1D => {
-                // println!(" DEC E");
+                cpulogln!("DEC E          | DEC {:#04x}", self.e);
                 self.e = self.dec_r8(self.e);
                 cycles = 4;
             }
             0x1E => {
-                // println!(" LD E, d8");
                 self.e = self.load_byte(memory);
+                cpulogln!("LD E, d8       | LD D, {:#04x}", self.e);
                 cycles = 8;
             }
             0x1F => {
-                // println!(" RRA");
+                cpulogln!("RRA");
                 self.a = self.rr_r8(self.a);
                 self.set_zero_flag(false);
                 cycles = 4;
             }
             0x20 => {
-                // println!(" JR NZ, r8");
-                let nn = self.load_byte(memory) as i8 as i16;
+                let nn = self.load_byte(memory);
                 if !self.get_zero_flag() {
-                    self.pc = (self.pc as i16).wrapping_add(nn) as u16;
+                    cpulogln!("JR NZ, r8      | JR {:#04x}", nn);
+                    self.pc = (self.pc as i16).wrapping_add(nn as i8 as i16) as u16;
                     cycles = 12;
                 } else {
+                    cpulogln!("JR NZ, r8      | <no jump>");
                     cycles = 8;
                 }
             }
             0x21 => {
-                // println!(" LD HL, d16");
                 let nn = self.load_word(memory);
+                cpulogln!("LD HL, d16     | LD HL, {:#06x}", nn);
                 self.set_hl(nn);
                 cycles = 12;
             }
             0x22 => {
-                // println!(" LD (HL+), A");
                 let addr = self.get_hl();
+                cpulogln!("LD (HL+), A    | LD ({:#06x}), {:#04x}", addr, self.a);
                 memory.write_byte(addr, self.a);
                 (self.h, self.l) = inc_r16(self.h, self.l);
                 cycles = 8;
             }
             0x23 => {
-                // println!(" INC HL");
+                cpulogln!("INC HL         | INC {:#06x}", self.get_hl());
                 (self.h, self.l) = inc_r16(self.h, self.l);
                 cycles = 8;
             }
             0x24 => {
-                // println!(" INC H");
+                cpulogln!("INC H          | INC {:#04x}", self.h);
                 self.h = self.inc_r8(self.h);
                 cycles = 4;
             }
             0x25 => {
-                // println!(" DEC H");
+                cpulogln!("DEC H          | DEC {:#04x}", self.h);
                 self.h = self.dec_r8(self.h);
                 cycles = 4;
             }
             0x26 => {
-                // println!(" LD H, d8");
                 self.h = self.load_byte(memory);
+                cpulogln!("LD H, d8       | LD H, {:#04x}", self.h);
                 cycles = 8;
             }
             0x27 => {
-                // println!(" DAA");
+                cpulogln!("DAA");
                 if self.get_subtraction_flag() {
                     if self.get_carry_flag() {
                         self.a = self.a.wrapping_sub(0x60);
@@ -639,155 +664,158 @@ impl CPU {
                 cycles = 4;
             }
             0x28 => {
-                // println!(" JR Z, r8");
-                let nn = self.load_byte(memory) as i8 as i16;
+                let nn = self.load_byte(memory);
                 if self.get_zero_flag() {
-                    self.pc = (self.pc as i16).wrapping_add(nn) as u16;
+                    cpulogln!("JR Z, r8       | JR {:#04x}", nn);
+                    self.pc = (self.pc as i16).wrapping_add(nn as i8 as i16) as u16;
                     cycles = 12;
                 } else {
+                    cpulogln!("JR Z, r8       | <no jump>");
                     cycles = 8;
                 }
             }
             0x29 => {
-                // println!(" ADD HL, HL");
+                cpulogln!("ADD HL, HL     | ADD HL, {:#06x}", self.get_hl());
                 let hl = self.add_r16(self.get_hl());
                 self.set_hl(hl);
                 cycles = 8;
             }
             0x2A => {
-                // println!(" LD A, (HL+)");
                 let addr = self.get_hl();
+                cpulogln!("LD A, (HL+)    | LD A, ({:#06x})", addr);
                 self.a = memory.read_byte(addr);
                 (self.h, self.l) = inc_r16(self.h, self.l);
                 cycles = 8;
             }
             0x2B => {
-                // println!(" DEC HL");
+                cpulogln!("DEC HL         | DEC {:#06x}", self.get_hl());
                 (self.h, self.l) = dec_r16(self.h, self.l);
                 cycles = 8;
             }
             0x2C => {
-                // println!(" INC L");
+                cpulogln!("INC L          | INC {:#04x}", self.l);
                 self.l = self.inc_r8(self.l);
                 cycles = 4;
             }
             0x2D => {
-                // println!(" DEC L");
+                cpulogln!("DEC L          | DEC {:#04x}", self.l);
                 self.l = self.dec_r8(self.l);
                 cycles = 4;
             }
             0x2E => {
-                // println!(" LD L, d8");
+                cpulogln!("LD L, d8       | LD L, {:#04x}", self.l);
                 self.l = self.load_byte(memory);
                 cycles = 8;
             }
             0x2F => {
-                // println!(" CPL");
+                cpulogln!("CPL");
                 self.a = !self.a;
                 self.set_subtraction_flag(true);
                 self.set_half_carry_flag(true);
                 cycles = 4;
             }
             0x30 => {
-                // println!(" JR NC, r8");
-                let nn = self.load_byte(memory) as i8 as i16;
+                let nn = self.load_byte(memory);
                 if !self.get_carry_flag() {
-                    self.pc = (self.pc as i16).wrapping_add(nn) as u16;
+                    cpulogln!("JR NC, r8      | JR {:#04x}", nn);
+                    self.pc = (self.pc as i16).wrapping_add(nn as i8 as i16) as u16;
                     cycles = 12;
                 } else {
+                    cpulogln!("JR NC, r8      | <no jump>");
                     cycles = 8;
                 }
             }
             0x31 => {
-                // println!(" LD SP, d16");
                 self.sp = self.load_word(memory);
+                cpulogln!("LD SP, d16     | LD SP, {:#06x}", self.sp);
                 cycles = 12;
             }
             0x32 => {
-                // println!(" LD (HL+), A");
                 let addr = self.get_hl();
                 memory.write_byte(addr, self.a);
                 (self.h, self.l) = dec_r16(self.h, self.l);
+                cpulogln!("LD (HL-), A    | LD ({:#06x}), {:#04x}", addr, self.a);
                 cycles = 8;
             }
             0x33 => {
-                // println!(" INC SP");
+                cpulogln!("INC SP         | INC {:#06x}", self.sp);
                 self.sp = self.sp.wrapping_add(1);
                 cycles = 8;
             }
             0x34 => {
-                // println!(" INC (HL)");
                 let addr = self.get_hl();
+                cpulogln!("INC (HL)       | INC ({:#06x})", addr);
                 let nn = self.inc_r8(memory.read_byte(addr));
                 memory.write_byte(addr, nn);
                 cycles = 4;
             }
             0x35 => {
-                // println!(" DEC (HL)");
                 let addr = self.get_hl();
+                cpulogln!("DEC (HL)       | DEC ({:#06x})", addr);
                 let nn = self.dec_r8(memory.read_byte(addr));
                 memory.write_byte(addr, nn);
                 cycles = 4;
             }
             0x36 => {
-                // println!(" LD (HL), d8");
                 let nn = self.load_byte(memory);
                 let addr = self.get_hl();
+                cpulogln!("LD (HL), d8    | LD ({:#06x}), {:#04x}", addr, nn);
                 memory.write_byte(addr, nn);
                 cycles = 12;
             }
             0x37 => {
-                // println!(" SCF");
+                cpulogln!("SCF");
                 self.set_subtraction_flag(false);
                 self.set_half_carry_flag(false);
                 self.set_carry_flag(true);
                 cycles = 4;
             }
             0x38 => {
-                // println!(" JR C, r8");
-                let nn = self.load_byte(memory) as i8 as i16;
+                let nn = self.load_byte(memory);
                 if self.get_carry_flag() {
-                    self.pc = (self.pc as i16).wrapping_add(nn) as u16;
+                    cpulogln!("JR C, r8       | JR {:#04x}", nn);
+                    self.pc = (self.pc as i16).wrapping_add(nn as i8 as i16) as u16;
                     cycles = 12;
                 } else {
+                    cpulogln!("JR C, r8       | <no jump>");
                     cycles = 8;
                 }
             }
             0x39 => {
-                // println!(" ADD HL, SP");
+                cpulogln!("ADD HL, SP     | ADD HL, {:#06x}", self.sp);
                 let hl = self.add_r16(self.sp);
                 self.set_hl(hl);
                 cycles = 8;
             }
             0x3A => {
-                // println!(" LD A, (HL-)");
                 let addr = self.get_hl();
+                cpulogln!("LD A, (HL-)    | LD A, ({:#06x})", addr);
                 self.a = memory.read_byte(addr);
                 (self.h, self.l) = dec_r16(self.h, self.l);
                 cycles = 8;
             }
             0x3B => {
-                // println!(" DEC SP");
+                cpulogln!("DEC SP         | DEC {:#06x}", self.sp);
                 self.sp = self.sp.wrapping_sub(1);
                 cycles = 8;
             }
             0x3C => {
-                // println!(" INC A");
+                cpulogln!("INC A          | INC {:#04x}", self.a);
                 self.a = self.inc_r8(self.a);
                 cycles = 4;
             }
             0x3D => {
-                // println!(" DEC A");
+                cpulogln!("DEC A          | DEC {:#04x}", self.a);
                 self.a = self.dec_r8(self.a);
                 cycles = 4;
             }
             0x3E => {
-                // println!(" LD A, d8");
                 self.a = self.load_byte(memory);
+                cpulogln!("LD A, d8       | LD A, {:#04x}", self.a);
                 cycles = 8;
             }
             0x3F => {
-                // println!(" CCF");
+                cpulogln!("CCF");
                 self.set_subtraction_flag(false);
                 self.set_half_carry_flag(false);
                 self.set_carry_flag(!self.get_carry_flag());
@@ -796,7 +824,13 @@ impl CPU {
             0x40..=0x75 | 0x77..=0x7F => {
                 let lhs_i = (opcode >> 3) & 0b0111; // Upper nibble divided by 8
                 let rhs_i = opcode & 0b0111; // Lower nibble
-                // println!(" LD {}, {}",self.get_reg_name(lhs_i),self.get_reg_name(rhs_i));
+                cpulogln!(
+                    "LD {:<4}, {:<4}  | LD {}, {:#04x}",
+                    self.get_reg_name(lhs_i),
+                    self.get_reg_name(rhs_i),
+                    self.get_reg_name(lhs_i),
+                    self.get_reg(memory, rhs_i)
+                );
                 if lhs_i == 6 {
                     *memory.get_cell(self.get_hl()) = self.get_reg(memory, rhs_i);
                 } else {
@@ -805,156 +839,166 @@ impl CPU {
                 cycles = if lhs_i == 6 || rhs_i == 6 { 8 } else { 4 };
             }
             0x76 => {
-                // println!(" HALT");
+                cpulogln!("HALT");
                 self.halt = true;
                 cycles = 4;
             }
             0x80..=0x87 => {
                 let i = opcode & 0b0111; // Lower nibble
-                // println!(" ADD A, {}", self.get_reg_name(i));
                 let nn = self.get_reg(memory, i);
+                cpulogln!("ADD A, {:<4}    | ADD A, {:#04x}", self.get_reg_name(i), nn);
                 self.a = self.add_r8(nn);
                 cycles = if i == 6 { 8 } else { 4 };
             }
             0x88..=0x8F => {
                 let i = opcode & 0b0111; // Lower nibble
-                // println!(" ADC A, {}", self.get_reg_name(i));
                 let nn = self.get_reg(memory, i);
+                cpulogln!("ADC A, {:<4}    | ADC A, {:#04x}", self.get_reg_name(i), nn);
                 self.a = self.adc_r8(nn);
                 cycles = if i == 6 { 8 } else { 4 };
             }
             0x90..=0x97 => {
                 let i = opcode & 0b0111; // Lower nibble
-                // println!(" SUB {}", self.get_reg_name(i));
                 let nn = self.get_reg(memory, i);
+                cpulogln!("SUB {:<4}       | SUB {:#04x}", self.get_reg_name(i), nn);
                 self.a = self.sub_r8(nn);
                 cycles = if i == 6 { 8 } else { 4 };
             }
             0x98..=0x9F => {
                 let i = opcode & 0b0111; // Lower nibble
-                // println!(" SBC A, {}", self.get_reg_name(i));
                 let nn = self.get_reg(memory, i);
+                cpulogln!("SBC A, {:<4}    | SBC A, {:#04x}", self.get_reg_name(i), nn);
                 self.a = self.sbc_r8(nn);
                 cycles = if i == 6 { 8 } else { 4 };
             }
             0xA0..=0xA7 => {
                 let i = opcode & 0b0111; // Lower nibble
-                // println!(" AND {}", self.get_reg_name(i));
                 let nn = self.get_reg(memory, i);
+                cpulogln!("AND {:<4}       | AND {:#04x}", self.get_reg_name(i), nn);
                 self.a = self.and_r8(nn);
                 cycles = if i == 6 { 8 } else { 4 };
             }
             0xA8..=0xAF => {
                 let i = opcode & 0b0111; // Lower nibble
-                // println!(" XOR {}", self.get_reg_name(i));
                 let nn = self.get_reg(memory, i);
+                cpulogln!("XOR {:<4}       | XOR {:#04x}", self.get_reg_name(i), nn);
                 self.a = self.xor(nn);
                 cycles = if i == 6 { 8 } else { 4 };
             }
             0xB0..=0xB7 => {
                 let i = opcode & 0b0111; // Lower nibble
-                // println!(" OR {}", self.get_reg_name(i));
                 let nn = self.get_reg(memory, i);
+                cpulogln!("OR {:<4}        | OR {:#04x}", self.get_reg_name(i), nn);
                 self.a = self.or_r8(nn);
                 cycles = if i == 6 { 8 } else { 4 };
             }
             0xB8..=0xBF => {
                 let i = opcode & 0b0111; // Lower nibble
-                // println!(" CP {}", self.get_reg_name(i));
                 let nn = self.get_reg(memory, i);
+                cpulogln!("CP {:<4}          | CP {:#04x}", self.get_reg_name(i), nn);
                 self.cp_r8(nn);
                 cycles = if i == 6 { 8 } else { 4 };
             }
             0xC0 => {
-                // println!(" RET NZ");
                 if !self.get_zero_flag() {
+                    cpulogln!("RET NZ         | RET {:#06x}", self.pc);
                     self.pc = self.pop_word(memory);
                     cycles = 20;
                 } else {
+                    cpulogln!("RET NZ         | <no return>");
                     cycles = 8;
                 }
             }
             0xC1 => {
-                // println!(" POP BC");
                 let nn = self.pop_word(memory);
+                cpulogln!("POP BC         | BC = {:#06x}", nn);
                 self.set_bc(nn);
                 cycles = 12;
             }
             0xC2 => {
-                // println!(" JP NZ, a16");
                 let nn = self.load_word(memory);
                 if !self.get_zero_flag() {
+                    cpulogln!("JR NZ, a16     | JR NZ, {:#06x}", nn);
                     self.pc = nn;
                     cycles = 16;
                 } else {
+                    cpulogln!("JR NZ, a16     | <no jump>");
                     cycles = 12
                 }
             }
             0xC3 => {
-                // println!(" JP a16");
                 self.pc = self.load_word(memory);
+                cpulogln!("JP a16         | JP {:#06x}", self.pc);
                 cycles = 16;
             }
             0xC4 => {
-                // println!(" CALL NZ, a16");
+                cpulogln!(" CALL NZ, a16");
                 let nn = self.load_word(memory);
                 if !self.get_zero_flag() {
+                    cpulogln!("CALL NZ, a16   | CALL {:#06x}", nn);
                     self.push_word(memory, self.pc);
                     self.pc = nn;
                     cycles = 24;
                 } else {
+                    cpulogln!("CALL NZ, a16   | <no call>");
                     cycles = 12;
                 }
             }
             0xC5 => {
-                // print!(" PUSH BC");
+                cpulogln!("PUSH BC        | PUSH {:#06x}", self.get_bc());
                 self.push_word(memory, self.get_bc());
-                // println!("     | PUSH({:#06x})", self.get_bc());
                 cycles = 16;
             }
             0xC6 => {
-                // println!(" ADD A, d8");
                 let nn = self.load_byte(memory);
+                cpulogln!("ADD A, d8      | ADD A, {:#04x}", nn);
                 self.a = self.add_r8(nn);
                 cycles = 8;
             }
             0xC7 => {
-                // println!(" RST 00H");
+                cpulogln!("RST 00H");
                 self.push_word(memory, self.pc);
                 self.pc = 0x0000;
                 cycles = 16;
             }
             0xC8 => {
-                // println!(" RET Z");
                 if self.get_zero_flag() {
                     self.pc = self.pop_word(memory);
+                    cpulogln!("RET Z          | RET {:#06x}", self.pc);
                     cycles = 20;
                 } else {
+                    cpulogln!("RET Z          | <no return>");
                     cycles = 8;
                 }
             }
             0xC9 => {
-                // println!(" RET");
                 self.pc = self.pop_word(memory);
+                cpulogln!("RET            | RET {:#06x}", self.pc);
                 cycles = 16;
             }
             0xCA => {
-                // println!(" JP Z, a16");
                 let nn = self.load_word(memory);
                 if self.get_zero_flag() {
+                    cpulogln!("JP Z, a16      | JP {:#06x}", nn);
                     self.pc = nn;
                     cycles = 16;
                 } else {
+                    cpulogln!("JP Z, a16      | <no jump>");
                     cycles = 12
                 }
             }
             0xCB => {
                 let cb_opcode = self.load_byte(memory);
-                // print!(" CB Opcode = {:#04x} |", cb_opcode);
+                cpulog!(
+                    "[CPU] PC = {:#06x} | {:#04x}{:02x} | ",
+                    self.pc.wrapping_sub(1),
+                    opcode,
+                    cb_opcode,
+                );
                 let i = cb_opcode & 0b0111;
                 match cb_opcode {
                     0x00..=0x07 => {
-                        // println!(" RLC {}", self.get_reg_name(i));
+                        cpulogln!("RLC {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = self.rlc_r8(nn);
@@ -963,7 +1007,7 @@ impl CPU {
                         }
                     }
                     0x08..=0x0F => {
-                        // println!(" RRC {}", self.get_reg_name(i));
+                        cpulogln!("RRC {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = self.rrc_r8(nn);
@@ -972,7 +1016,7 @@ impl CPU {
                         }
                     }
                     0x10..=0x17 => {
-                        // println!(" RL {}", self.get_reg_name(i));
+                        cpulogln!("RL {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = self.rl_r8(nn);
@@ -981,7 +1025,7 @@ impl CPU {
                         }
                     }
                     0x18..=0x1F => {
-                        // println!(" RR {}", self.get_reg_name(i));
+                        cpulogln!("RR {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = self.rr_r8(nn);
@@ -990,7 +1034,7 @@ impl CPU {
                         }
                     }
                     0x20..=0x27 => {
-                        // println!(" SLA {}", self.get_reg_name(i));
+                        cpulogln!("SLA {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = self.sla_r8(nn);
@@ -999,7 +1043,7 @@ impl CPU {
                         }
                     }
                     0x28..=0x2F => {
-                        // println!(" SRA {}", self.get_reg_name(i));
+                        cpulogln!("SRA {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = self.sra_r8(nn);
@@ -1008,7 +1052,7 @@ impl CPU {
                         }
                     }
                     0x30..=0x37 => {
-                        // println!(" SWAP {}", self.get_reg_name(i));
+                        cpulogln!("SWAP {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = self.swap_r8(nn);
@@ -1017,7 +1061,7 @@ impl CPU {
                         }
                     }
                     0x38..=0x3F => {
-                        // println!(" SRL {}", self.get_reg_name(i));
+                        cpulogln!("SRL {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = self.srl_r8(nn);
@@ -1027,13 +1071,13 @@ impl CPU {
                     }
                     0x40..=0x7F => {
                         let bit = (cb_opcode >> 3) & 0b0111;
-                        // println!(" BIT {bit}, {}", self.get_reg_name(i));
+                        cpulogln!("BIT {bit}, {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         self.bit_r8(bit, nn);
                     }
                     0x80..=0xBF => {
                         let bit = (cb_opcode >> 3) & 0b0111;
-                        // println!(" RES {bit}, {}", self.get_reg_name(i));
+                        cpulogln!("RES {bit}, {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = res_r8(bit, nn);
@@ -1043,7 +1087,7 @@ impl CPU {
                     }
                     0xC0..=0xFF => {
                         let bit = (cb_opcode >> 3) & 0b0111;
-                        // println!(" SET {bit}, {}", self.get_reg_name(i));
+                        cpulogln!("SET {bit}, {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
                             *memory.get_cell(self.get_hl()) = set_r8(bit, nn);
@@ -1055,169 +1099,176 @@ impl CPU {
                 cycles = if i == 6 { 16 } else { 8 }
             }
             0xCC => {
-                // println!(" CALL Z, a16");
                 let nn = self.load_word(memory);
                 if self.get_zero_flag() {
+                    cpulogln!("CALL Z, a16    | CALL {:#06x}", nn);
                     self.push_word(memory, self.pc);
                     self.pc = nn;
                     cycles = 24;
                 } else {
+                    cpulogln!("CALL Z, a16    | <no call>");
                     cycles = 12;
                 }
             }
             0xCD => {
-                // println!(" CALL a16");
                 // CALL nn: Call function
                 // Unconditional function call to the absolute address specified by the 16-bit operand nn.
                 let nn = self.load_word(memory);
+                cpulogln!("CALL a16       | CALL {:#06x}", nn);
                 self.push_word(memory, self.pc);
                 self.pc = nn;
                 cycles = 24;
             }
             0xCE => {
-                // println!(" ADC A, d8");
                 let nn = self.load_byte(memory);
+                cpulogln!("ADC A, d8      | ADC A, {:#04x}", nn);
                 self.a = self.adc_r8(nn);
                 cycles = 8;
             }
             0xCF => {
-                // println!(" RST 08H");
+                cpulogln!("RST 08H");
                 self.push_word(memory, self.pc);
                 self.pc = 0x0008;
                 cycles = 16;
             }
             0xD0 => {
-                // println!(" RET NC");
                 if !self.get_carry_flag() {
                     self.pc = self.pop_word(memory);
+                    cpulogln!("RET NC         | RET {:#06x}", self.pc);
                     cycles = 20;
                 } else {
+                    cpulogln!("RET NC         | <no return>");
                     cycles = 8;
                 }
             }
             0xD1 => {
-                // println!(" POP DE");
                 let nn = self.pop_word(memory);
+                cpulogln!("POP DE         | DE = {:#06x}", nn);
                 self.set_de(nn);
                 cycles = 12;
             }
             0xD2 => {
-                // println!(" JP NC, a16");
                 let nn = self.load_word(memory);
                 if !self.get_carry_flag() {
+                    cpulogln!("JP NC, a16     | JP {:#06x}", nn);
                     self.pc = nn;
                     cycles = 16;
                 } else {
+                    cpulogln!("JP NC, a16     | <no jump>");
                     cycles = 12
                 }
             }
             0xD4 => {
-                // println!(" CALL NC, a16");
                 let nn = self.load_word(memory);
                 if !self.get_carry_flag() {
+                    cpulogln!("CALL NC, a16   | CALL {:#06x}", nn);
                     self.push_word(memory, self.pc);
                     self.pc = nn;
                     cycles = 24;
                 } else {
+                    cpulogln!("CALL NC, a16   | <no call>");
                     cycles = 12;
                 }
             }
             0xD5 => {
-                // println!(" PUSH DE");
+                cpulogln!("PUSH DE        | PUSH {:#06x}", self.get_de());
                 self.push_word(memory, self.get_de());
                 cycles = 16;
             }
             0xD6 => {
-                // println!(" SUB A, d8");
                 let nn = self.load_byte(memory);
+                cpulogln!("SUB A, d8      | SUB A, {:#04x}", nn);
                 self.a = self.sub_r8(nn);
                 cycles = 8;
             }
             0xD7 => {
-                // println!(" RST 10H");
+                cpulogln!("RST 10H");
                 self.push_word(memory, self.pc);
                 self.pc = 0x0010;
                 cycles = 16;
             }
             0xD8 => {
-                // println!(" RET C");
                 if self.get_carry_flag() {
                     self.pc = self.pop_word(memory);
+                    cpulogln!("RET C          | RET {:#06x}", self.pc);
                     cycles = 20;
                 } else {
+                    cpulogln!("RET NC         | <no return>");
                     cycles = 8;
                 }
             }
             0xD9 => {
-                // println!(" RETI");
                 self.pc = self.pop_word(memory);
+                cpulogln!("RETI           | RETI {:#06x}", self.pc);
                 self.ime = true;
                 cycles = 16;
             }
             0xDA => {
-                // println!(" JP C, a16");
                 let nn = self.load_word(memory);
                 if self.get_carry_flag() {
+                    cpulogln!("JP C, a16      | JP {:#06x}", nn);
                     self.pc = nn;
                     cycles = 16;
                 } else {
+                    cpulogln!("JP C, a16      | <no jump>");
                     cycles = 12
                 }
             }
             0xDC => {
-                // println!(" CALL C, a16");
                 let nn = self.load_word(memory);
                 if self.get_carry_flag() {
+                    cpulogln!("CALL C, a16    | CALL {:#06x}", nn);
                     self.push_word(memory, self.pc);
                     self.pc = nn;
                     cycles = 24;
                 } else {
+                    cpulogln!("CALL C, a16    | <no call>");
                     cycles = 12;
                 }
             }
             0xDE => {
-                // println!(" SBC A, d8");
                 let nn = self.load_byte(memory);
+                cpulogln!("SBC A, d8      | SBC A, {:#04x}", nn);
                 self.a = self.sbc_r8(nn);
                 cycles = 8;
             }
             0xDF => {
-                // println!(" RST 18H");
+                cpulogln!("RST 18H");
                 self.push_word(memory, self.pc);
                 self.pc = 0x0018;
                 cycles = 16;
             }
             0xE0 => {
-                // println!(" LD (a8), A");
                 // LD (n), A: Load from accumulator (direct 0xFF00+n)
                 // Load to the address specified by the 8-bit immediate data n, data from the 8-bit A register. The
                 // full 16-bit absolute address is obtained by setting the most significant byte to 0xFF and the
                 // least significant byte to the value of n, so the possible range is 0xFF00-0xFFFF.
                 let nn = self.load_byte(memory);
+                cpulogln!("LD (a8), A     | LD ({:#04x}) {:#04x}", nn, self.a);
                 let addr = 0xFF00 | nn as u16;
                 memory.write_byte(addr, self.a);
                 cycles = 12;
             }
             0xE1 => {
-                // println!(" POP HL");
                 let nn = self.pop_word(memory);
+                cpulogln!("POP HL         | HL = {:#06x}", nn);
                 self.set_hl(nn);
                 cycles = 12;
             }
             0xE2 => {
-                // println!(" LD (C), A");
+                cpulogln!("LD (C), A      | LD ({:#04x}) {:#04x}", self.c, self.a);
                 let addr = 0xFF00 | (self.c as u16);
                 memory.write_byte(addr, self.a);
                 cycles = 8;
             }
             0xE5 => {
-                // println!(" PUSH HL");
+                cpulogln!("PUSH HL        | PUSH {:#06x}", self.get_hl());
                 self.push_word(memory, self.get_hl());
                 cycles = 16;
             }
             0xE6 => {
-                // println!(" AND d8");
                 let nn = self.load_byte(memory);
+                cpulogln!("AND d8         | AND {:#04x}", nn);
                 self.a &= nn;
                 self.set_zero_flag(self.a == 0);
                 self.set_subtraction_flag(false);
@@ -1226,14 +1277,14 @@ impl CPU {
                 cycles = 8;
             }
             0xE7 => {
-                // println!(" RST 20H");
+                cpulogln!("RST 20H");
                 self.push_word(memory, self.pc);
                 self.pc = 0x0020;
                 cycles = 16;
             }
             0xE8 => {
-                // println!(" ADD SP, r8");
                 let nn = self.load_byte(memory) as i8;
+                cpulogln!("ADD SP, r8     | ADD SP, {:#04x}", nn);
                 self.set_half_carry_flag((self.sp & 0x0F) + (nn as u16 & 0x0F) > 0x0F);
                 self.set_carry_flag((self.sp & 0xFF) + (nn as u16 & 0xFF) > 0xFF);
                 self.sp = self.sp.wrapping_add(nn as u16);
@@ -1242,111 +1293,110 @@ impl CPU {
                 cycles = 16;
             }
             0xE9 => {
-                // println!(" JP (HL)");
+                cpulogln!("JP HL          | JP {:#06x}", self.get_hl());
                 self.pc = self.get_hl();
                 cycles = 4;
             }
             0xEA => {
-                // println!(" LD (a16), A");
                 let nn = self.load_word(memory);
+                cpulogln!("LD (a16), A    | LD ({:#06x}), {:#04x}", nn, self.a);
                 memory.write_byte(nn, self.a);
                 cycles = 16;
             }
             0xEE => {
-                // println!(" XOR d8");
                 let nn = self.load_byte(memory);
+                cpulogln!("XOR d8         | XOR {:#04x}", nn);
                 self.a = self.xor(nn);
                 cycles = 8;
             }
             0xEF => {
-                // println!(" RST 28H");
+                cpulogln!("RST 28H");
                 self.push_word(memory, self.pc);
                 self.pc = 0x0028;
                 cycles = 16;
             }
             0xF0 => {
-                // print!(" LD A, (a8)");
                 let nn = self.load_byte(memory);
                 let addr = 0xFF00 | nn as u16;
                 self.a = memory.read_byte(addr);
-                // println!(" | LD A, ({:#06x}) => LD A, {:#04x}", addr, self.a);
+                cpulogln!("LD A, (a8)     | LD A, {:#04x}", self.a);
                 cycles = 12;
             }
             0xF1 => {
-                // println!(" POP AF");
                 let nn = self.pop_word(memory);
+                cpulogln!("POP AF         | AF = {:#06x}", nn);
                 self.set_af(nn);
                 cycles = 12;
             }
             0xF2 => {
-                // println!(" LD A, (C)");
                 let addr = 0xFF00 | (self.c as u16);
                 self.a = memory.read_byte(addr);
+                cpulogln!("LD A, (C)      | LD A, {:#04x}", self.a);
                 cycles = 8;
             }
             0xF3 => {
-                // println!(" DI");
+                cpulogln!("DI");
                 self.ime = false;
                 cycles = 4;
             }
             0xF5 => {
-                // println!(" PUSH AF");
+                cpulogln!("PUSH AF        | PUSH {:#06x}", self.get_af());
                 self.push_word(memory, self.get_af());
                 cycles = 16;
             }
             0xF6 => {
-                // println!(" OR d8");
                 let nn = self.load_byte(memory);
+                cpulogln!("OR d8          | OR {:#04x}", nn);
                 self.a = self.or_r8(nn);
                 cycles = 8;
             }
             0xF7 => {
-                // println!(" RST 30H");
+                cpulogln!("RST 30H");
                 self.push_word(memory, self.pc);
                 self.pc = 0x0030;
                 cycles = 16;
             }
             0xF8 => {
-                // println!(" LD HL, SP+r8");
                 let nn = self.load_byte(memory) as i8;
                 self.set_half_carry_flag((self.sp & 0x0F) + (nn as u16 & 0x0F) > 0x0F);
                 self.set_carry_flag((self.sp & 0xFF) + (nn as u16 & 0xFF) > 0xFF);
-                self.set_hl(self.sp.wrapping_add(nn as u16));
+                let hl = self.sp.wrapping_add(nn as u16);
+                cpulogln!("LD HL, SP+r8   | LD HL, {:#06x}", hl);
+                self.set_hl(hl);
                 self.set_zero_flag(false);
                 self.set_subtraction_flag(false);
                 cycles = 16;
             }
             0xF9 => {
-                // println!(" LD SP, HL");
                 self.sp = self.get_hl();
+                cpulogln!("LD SP, HL      | LD SP, {:#06x}", self.sp);
                 cycles = 8;
             }
             0xFA => {
-                // println!(" LD A, (a16)");
                 let nn = self.load_word(memory);
                 self.a = memory.read_byte(nn);
+                cpulogln!("LD A, (a16)    | LD A, {:#04x}", self.a);
                 cycles = 16;
             }
             0xFB => {
-                // println!(" EI");
+                cpulogln!("EI");
                 self.should_enable_ime = true;
                 cycles = 4;
             }
             0xFE => {
-                // print!(" CP d8");
                 let nn = self.load_byte(memory);
-                // println!("      | CP {:#04x}", nn);
+                cpulogln!("CP d8          | CP {:#04x}", nn);
                 self.cp_r8(nn);
                 cycles = 8;
             }
             0xFF => {
-                // println!(" RST 38H");
+                cpulogln!("RST 38H");
                 self.push_word(memory, self.pc);
                 self.pc = 0x0038;
                 cycles = 16;
             }
             _ => {
-                // println!(" ???");
+                cpulogln!(" ???");
                 panic!("Opcode not implemented {:#04x}", opcode);
             }
         }

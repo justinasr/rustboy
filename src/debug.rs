@@ -107,26 +107,16 @@ pub fn dump_background(memory: &Memory) {
 }
 
 pub fn dump_tile_data(memory: &Memory) {
-    let lcdc = memory.read_byte(0xFF40);
-
-    let tile_data_start = get_tile_data_start(memory);
-    let tile_map_start = get_tile_map_start(memory);
-    println!("LCDC            {:#010b}", lcdc);
-    println!("Tile data start {:#06x}", tile_data_start,);
-    println!("Tile map start  {:#06x}", tile_map_start);
-
-    let mut pixels = vec![vec![' '; 256]; 96];
-    for tile_row in 0..12 as u8 {
-        for tile_col in 0..32 as u8 {
-            let tile_addr = 0x8000 + (tile_row as u16 * 24 + tile_col as u16) * 16;
+    let mut pixels = vec![vec![' '; 128]; 192];
+    for tile_row in 0..24 as u8 {
+        for tile_col in 0..16 as u8 {
+            let tile_addr = tile_addr(tile_row as u16 * 16 + tile_col as u16);
             for y in 0..8 as u8 {
-                let tile_word = memory.read_word(tile_addr + y as u16 * 2);
                 for x in 0..8 as u8 {
                     let xx = tile_col * 8 + x;
                     let yy = tile_row * 8 + y;
-                    let pixel =
-                        ((tile_word >> (15 - x)) & 0b01) | (((tile_word >> (7 - x)) << 1) & 0b10);
-                    pixels[yy as usize][xx as usize] = match pixel {
+                    let pixel_i = tile_pixel_i(memory, tile_addr, x, y);
+                    pixels[yy as usize][xx as usize] = match pixel_i {
                         0 => ' ',
                         1 => '░',
                         2 => '▒',
@@ -138,20 +128,32 @@ pub fn dump_tile_data(memory: &Memory) {
         }
     }
 
-    for row in 0..96 {
+    for row in 0..192 {
         if row % 8 == 0 {
-            let addr = 0x8000 + (row / 8) * 256;
             println!("");
         }
-        if !pixels[row as usize].iter().any(|i| *i != ' ') {
-            continue;
-        }
-        for col in 0..256 {
-            if col % 8 == 0 {
-                print!(" | ");
-            }
+        for col in 0..128 {
             print!("{}", pixels[row as usize][col as usize]);
         }
         println!();
+    }
+}
+
+pub fn tile_addr(tile_index: u16) -> u16 {
+    0x8000 + tile_index * 16
+}
+
+pub fn tile_pixel_i(memory: &Memory, tile_addr: u16, x: u8, y: u8) -> u8 {
+    let word = memory.read_word(tile_addr + y as u16 * 2);
+    ((word >> (15 - x)) & 0b01) as u8 | (((word >> (7 - x)) << 1) & 0b10) as u8
+}
+
+pub fn debug_color(pixel: u8) -> [u8; 4] {
+    match pixel {
+        0 => [255, 255, 255, 255],
+        1 => [160, 160, 160, 255],
+        2 => [80, 80, 80, 255],
+        3 => [0, 0, 0, 255],
+        _ => unreachable!(),
     }
 }
