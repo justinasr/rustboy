@@ -20,9 +20,6 @@ impl Memory {
         if addr < 0x8000 {
             return self.cartridge[addr as usize];
         }
-        if addr == 0xFF00 {
-            return 0xFF;
-        }
         self.memory[addr as usize]
     }
 
@@ -38,6 +35,22 @@ impl Memory {
             // panic!("Trying to write {:#04x} to {:#06x}", value, addr)
             return;
         }
+        if addr == 0xFF00 {
+            let nn = (value & 0xF0) | (self.memory[addr as usize] & 0x0F);
+            self.memory[addr as usize] = nn;
+            return
+        }
+        if addr == 0xFF46 {
+            // Very cycle-inaccurate DMA transfer.
+            let start_addr = (value as u16) << 8;
+            for i in 0..=0x9F {
+                self.write_byte(0xFE00 + i, self.read_byte(start_addr + i));
+            }
+        }
+        self.memory[addr as usize] = value;
+    }
+
+    pub fn write_byte_(&mut self, addr: u16, value: u8) {
         self.memory[addr as usize] = value;
     }
 

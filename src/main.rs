@@ -21,8 +21,8 @@ use winit_input_helper::WinitInputHelper;
 const WIDTH: u32 = 160;
 const HEIGHT: u32 = 144;
 
-// const TILE_DATA_WIDTH: u32 = 128;
-// const TILE_DATA_HEIGHT: u32 = 192;
+const TILE_DATA_WIDTH: u32 = 128 + 15;
+const TILE_DATA_HEIGHT: u32 = 192 + 23;
 
 fn main() -> Result<(), Error> {
     env_logger::init();
@@ -61,7 +61,7 @@ fn main() -> Result<(), Error> {
 
     let args: Vec<String> = std::env::args().collect();
     let mut gameboy = Gameboy::new(&args[1]);
-    let mut paused = true;
+    let mut paused = false;
 
     let res = event_loop.run(|event, elwt| {
         // Draw the current frame
@@ -90,16 +90,20 @@ fn main() -> Result<(), Error> {
             //         let x = (i % TILE_DATA_WIDTH as usize) as u8;
             //         let y = (i / TILE_DATA_WIDTH as usize) as u8;
 
-            //         let tile_x = x / 8;
-            //         let tile_y = y / 8;
-            //         let rgba = debug_color(tile_pixel_i(
-            //             &gameboy.memory,
-            //             tile_addr(tile_y as u16 * 16 + tile_x as u16),
-            //             x % 8,
-            //             y % 8,
-            //         ));
+            //         let tile_x = x / 9;
+            //         let tile_y = y / 9;
+            //         if x % 9 == 8 || y % 9 == 8 {
+            //             pixel.copy_from_slice(&[0, 200, 0, 200]);
+            //         } else {
+            //             let rgba = debug_color(tile_pixel_i(
+            //                 &gameboy.memory,
+            //                 tile_addr(tile_y as u16 * 16 + tile_x as u16),
+            //                 x % 9,
+            //                 y % 9,
+            //             ));
 
-            //         pixel.copy_from_slice(&rgba);
+            //             pixel.copy_from_slice(&rgba);
+            //         }
             //     }
 
             //     if let Err(err) = tile_data_pixels.render() {
@@ -151,6 +155,9 @@ fn main() -> Result<(), Error> {
             } else if input.key_pressed(KeyCode::KeyB) {
                 println!("BACKGROUND");
                 dump_background(&gameboy.memory);
+            } else if input.key_pressed(KeyCode::KeyO) {
+                println!("OAM");
+                dump_oam(&gameboy.memory);
             } else if input.key_pressed(KeyCode::KeyQ) {
                 gameboy.tick();
             } else if input.key_pressed(KeyCode::KeyW) {
@@ -170,6 +177,56 @@ fn main() -> Result<(), Error> {
             // Update internal state and request a redraw
             if !paused {
                 for _ in 0..10000 {
+                    let mut input_value = gameboy.memory.read_byte(0xFF00);
+                    if input_value & 0x10 == 0 {
+                        // DPad
+                        if input.key_held(KeyCode::ArrowRight) {
+                            input_value &= !1;
+                        } else {
+                            input_value |= 1;
+                        }
+                        if input.key_held(KeyCode::ArrowLeft) {
+                            input_value &= !2;
+                        } else {
+                            input_value |= 2;
+                        }
+                        if input.key_held(KeyCode::ArrowUp) {
+                            input_value &= !4;
+                        } else {
+                            input_value |= 4;
+                        }
+                        if input.key_held(KeyCode::ArrowDown) {
+                            input_value &= !8;
+                        } else {
+                            input_value |= 8;
+                        }
+                    } else if input_value & 0x20 == 0 {
+                        // Select buttons
+                        if input.key_held(KeyCode::KeyS) {
+                            input_value &= !1;
+                        } else {
+                            input_value |= 1;
+                        }
+                        if input.key_held(KeyCode::KeyA) {
+                            input_value &= !2;
+                        } else {
+                            input_value |= 2;
+                        }
+                        if input.key_held(KeyCode::KeyX) {
+                            input_value &= !4;
+                        } else {
+                            input_value |= 4;
+                        }
+                        if input.key_held(KeyCode::KeyZ) {
+                            input_value &= !8;
+                        } else {
+                            input_value |= 8;
+                        }
+                    } else {
+                        input_value = (input_value & 0xF0) | 0x0F;
+                    }
+                    gameboy.memory.write_byte_(0xFF00, input_value);
+
                     gameboy.tick();
                 }
             }

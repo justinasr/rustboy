@@ -157,3 +157,7 @@ pub fn debug_color(pixel: u8) -> [u8; 4] {
         _ => unreachable!(),
     }
 }
+
+pub fn dump_oam(memory: &Memory) {
+    dump_memory_range(memory, 0xFE00, 0xFE9F, 4);
+}

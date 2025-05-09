@@ -98,6 +98,69 @@ impl PPU {
         }
     }
 
+    fn draw_line_of_objects(&mut self, memory: &Memory, lcdc: u8, ly: u8) {
+        let obj_enable = lcdc & 0x01 != 0;
+        if !obj_enable {
+            return;
+        }
+        let tile_height = if lcdc & 0x04 != 0 { 16 } else { 8 };
+        let tile_size = 16; // Tile size in bytes
+        let tile_i_mask = if tile_height == 8 { 0xFF } else { 0xFE };
+        let mut count = 0;
+        for i in 0..40 as u16 {
+            // OAM object address. Each object is 4 bytes.
+            let addr = 0xFE00 + i * 4;
+            // Object y starts at -16 and ends at (144+16) = 160.
+            // Object height can be either 8 or 16 pixels.
+            // Screen "starts" at y=16 and ends at y=160.
+            // Check if scanline ly is within the object.
+            let y = memory.read_byte(addr);
+            if y == 0 {
+                continue;
+            }
+            if y <= ly + 16 && ly + 16 < y + tile_height {
+                count += 1;
+                // Tile x on screen.
+                let x = memory.read_byte(addr + 1);
+                if x == 0 || x >= 168 {
+                    continue;
+                }
+                // Tile index in tile data memory.
+                let tile_i = memory.read_byte(addr + 2) & tile_i_mask;
+                // Tile flags
+                let flags = memory.read_byte(addr + 3);
+                let x_flip = flags & 0x20 != 0;
+                let y_flip = flags & 0x40 != 0;
+                // Tile start address. If tile size is 8x16, pick correct 8x8 tile.
+                let tile_addr = 0x8000 + tile_i as u16 * tile_size as u16;
+                // Y coordinate in tile, regardless of Y flip - 0..16.
+                let _tile_y = ly - (y - 16);
+                // Y coordinate in tile, taking in consideration Y flip.
+                let tile_y = if y_flip {
+                    tile_height - 1 - _tile_y
+                } else {
+                    _tile_y
+                };
+                // Objects are 8 pixels wide.
+                for xx in 0..8 {
+                    // Screen x "starts" at 8 and ends at 168.
+                    if 8 <= x + xx && x + xx < 168 {
+                        // X coordinate in tile.
+                        let tile_x = if x_flip { 7 - xx } else { xx };
+                        let pixel = self.get_tile_pixel(tile_addr, memory, tile_x, tile_y);
+                        if pixel != 0 {
+                            self.pixels[ly as usize][(x + xx - 8) as usize] = pixel;
+                        }
+                    }
+                }
+            }
+            // At most 10 sprites can be drawn in one scanline.
+            if count == 10 {
+                break;
+            }
+        }
+    }
+
     pub fn tick(&mut self, memory: &mut Memory, cycles: u8) {
         // 0xFF40 - LCDC: LCD control
         let lcdc = memory.read_byte(0xFF40);
@@ -170,6 +233,7 @@ impl PPU {
             // Draw a line of background
             if ly < 144 {
                 self.draw_line_of_background(memory, lcdc, ly);
+                self.draw_line_of_objects(memory, lcdc, ly);
             }
             ly = (ly + 1) % 154;
             memory.write_byte(0xFF44, ly);
