@@ -3,6 +3,7 @@ use super::memory::Memory;
 pub struct PPU {
     cycles: u64,
     pixels: Vec<Vec<u8>>,
+    color_index: Vec<Vec<u8>>,
     mode: u8,
 }
 
@@ -11,6 +12,7 @@ impl PPU {
         PPU {
             cycles: 0,
             pixels: vec![vec![0; 160]; 154],
+            color_index: vec![vec![0; 160]; 154],
             mode: 0,
         }
     }
@@ -21,7 +23,7 @@ impl PPU {
             1 => [160, 160, 160, 255],
             2 => [80, 80, 80, 255],
             3 => [0, 0, 0, 255],
-            _ => unreachable!(),
+            _ => unreachable!("Invalid pixel {}", self.pixels[y as usize][x as usize]),
         }
     }
 
@@ -66,6 +68,9 @@ impl PPU {
             // Coordinate in the full 256x256 background
             let bg_y = scy.wrapping_add(ly);
 
+            // Palette
+            let palette = memory.read_byte(0xFF47);
+
             for lx in 0..160 {
                 // Coordinate in the full 256x256 background
                 let bg_x = scx.wrapping_add(lx);
@@ -87,8 +92,11 @@ impl PPU {
                 // Pixel coordinate in the tile - 0..8
                 let pixel_x = bg_x - (tile_x * 8);
                 let pixel_y = bg_y - (tile_y * 8);
-                self.pixels[ly as usize][lx as usize] =
-                    self.get_tile_pixel(tile_addr, memory, pixel_x, pixel_y) as u8;
+                // Color index in palette
+                let pixel_i = self.get_tile_pixel(tile_addr, memory, pixel_x, pixel_y) as u8;
+                let pixel = (palette >> (pixel_i * 2)) & 0x03;
+                self.pixels[ly as usize][lx as usize] = pixel;
+                self.color_index[ly as usize][lx as usize] = pixel_i;
             }
         } else {
             // Background disabled
@@ -129,8 +137,10 @@ impl PPU {
                 let tile_i = memory.read_byte(addr + 2) & tile_i_mask;
                 // Tile flags
                 let flags = memory.read_byte(addr + 3);
+                let dmg_palette = (flags >> 4) & 0x01; // 0 or 1
                 let x_flip = flags & 0x20 != 0;
                 let y_flip = flags & 0x40 != 0;
+                let priority = flags & 0x80 != 0;
                 // Tile start address. If tile size is 8x16, pick correct 8x8 tile.
                 let tile_addr = 0x8000 + tile_i as u16 * tile_size as u16;
                 // Y coordinate in tile, regardless of Y flip - 0..16.
@@ -141,15 +151,25 @@ impl PPU {
                 } else {
                     _tile_y
                 };
+                // Palette
+                // 0xFF48 or 0xFF49
+                let palette = memory.read_byte(0xFF48 + dmg_palette as u16);
                 // Objects are 8 pixels wide.
                 for xx in 0..8 {
                     // Screen x "starts" at 8 and ends at 168.
                     if 8 <= x + xx && x + xx < 168 {
                         // X coordinate in tile.
                         let tile_x = if x_flip { 7 - xx } else { xx };
-                        let pixel = self.get_tile_pixel(tile_addr, memory, tile_x, tile_y);
-                        if pixel != 0 {
-                            self.pixels[ly as usize][(x + xx - 8) as usize] = pixel;
+                        // Color index in palette 0..3
+                        let pixel_i = self.get_tile_pixel(tile_addr, memory, tile_x, tile_y);
+                        let lx = x + xx - 8;
+
+                        if pixel_i != 0
+                            && (!priority || self.color_index[ly as usize][lx as usize] == 0)
+                        {
+                            let pixel = (palette >> (pixel_i * 2)) & 0x03;
+                            self.pixels[ly as usize][lx as usize] = pixel;
+                            self.color_index[ly as usize][lx as usize] = pixel_i;
                         }
                     }
                 }
