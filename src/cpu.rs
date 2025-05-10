@@ -832,7 +832,7 @@ impl CPU {
                     self.get_reg(memory, rhs_i)
                 );
                 if lhs_i == 6 {
-                    *memory.get_cell(self.get_hl()) = self.get_reg(memory, rhs_i);
+                    memory.write_byte(self.get_hl(), self.get_reg(memory, rhs_i));
                 } else {
                     *self.get_mut_reg(lhs_i) = self.get_reg(memory, rhs_i);
                 }
@@ -1001,7 +1001,7 @@ impl CPU {
                         cpulogln!("RLC {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
-                            *memory.get_cell(self.get_hl()) = self.rlc_r8(nn);
+                            memory.write_byte(self.get_hl(), self.rlc_r8(nn));
                         } else {
                             *self.get_mut_reg(i) = self.rlc_r8(nn);
                         }
@@ -1010,7 +1010,7 @@ impl CPU {
                         cpulogln!("RRC {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
-                            *memory.get_cell(self.get_hl()) = self.rrc_r8(nn);
+                            memory.write_byte(self.get_hl(), self.rrc_r8(nn));
                         } else {
                             *self.get_mut_reg(i) = self.rrc_r8(nn);
                         }
@@ -1019,7 +1019,7 @@ impl CPU {
                         cpulogln!("RL {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
-                            *memory.get_cell(self.get_hl()) = self.rl_r8(nn);
+                            memory.write_byte(self.get_hl(), self.rl_r8(nn));
                         } else {
                             *self.get_mut_reg(i) = self.rl_r8(nn);
                         }
@@ -1028,7 +1028,7 @@ impl CPU {
                         cpulogln!("RR {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
-                            *memory.get_cell(self.get_hl()) = self.rr_r8(nn);
+                            memory.write_byte(self.get_hl(), self.rr_r8(nn));
                         } else {
                             *self.get_mut_reg(i) = self.rr_r8(nn);
                         }
@@ -1037,7 +1037,7 @@ impl CPU {
                         cpulogln!("SLA {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
-                            *memory.get_cell(self.get_hl()) = self.sla_r8(nn);
+                            memory.write_byte(self.get_hl(), self.sla_r8(nn));
                         } else {
                             *self.get_mut_reg(i) = self.sla_r8(nn);
                         }
@@ -1046,7 +1046,7 @@ impl CPU {
                         cpulogln!("SRA {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
-                            *memory.get_cell(self.get_hl()) = self.sra_r8(nn);
+                            memory.write_byte(self.get_hl(), self.sra_r8(nn));
                         } else {
                             *self.get_mut_reg(i) = self.sra_r8(nn);
                         }
@@ -1055,7 +1055,7 @@ impl CPU {
                         cpulogln!("SWAP {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
-                            *memory.get_cell(self.get_hl()) = self.swap_r8(nn);
+                            memory.write_byte(self.get_hl(), self.swap_r8(nn));
                         } else {
                             *self.get_mut_reg(i) = self.swap_r8(nn);
                         }
@@ -1064,7 +1064,7 @@ impl CPU {
                         cpulogln!("SRL {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
-                            *memory.get_cell(self.get_hl()) = self.srl_r8(nn);
+                            memory.write_byte(self.get_hl(), self.srl_r8(nn));
                         } else {
                             *self.get_mut_reg(i) = self.srl_r8(nn);
                         }
@@ -1080,7 +1080,7 @@ impl CPU {
                         cpulogln!("RES {bit}, {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
-                            *memory.get_cell(self.get_hl()) = res_r8(bit, nn);
+                            memory.write_byte(self.get_hl(), res_r8(bit, nn));
                         } else {
                             *self.get_mut_reg(i) = res_r8(bit, nn);
                         }
@@ -1090,7 +1090,7 @@ impl CPU {
                         cpulogln!("SET {bit}, {}", self.get_reg_name(i));
                         let nn = self.get_reg(memory, i);
                         if i == 6 {
-                            *memory.get_cell(self.get_hl()) = set_r8(bit, nn);
+                            memory.write_byte(self.get_hl(), set_r8(bit, nn));
                         } else {
                             *self.get_mut_reg(i) = set_r8(bit, nn);
                         }

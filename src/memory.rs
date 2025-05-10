@@ -58,8 +58,4 @@ impl Memory {
         self.write_byte(addr, (value & 0xFF) as u8);
         self.write_byte(addr + 1, ((value >> 8) & 0xFF) as u8);
     }
-
-    pub fn get_cell(&mut self, addr: u16) -> &mut u8 {
-        &mut (self.memory[addr as usize])
-    }
 }
