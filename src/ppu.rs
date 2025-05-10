@@ -107,7 +107,7 @@ impl PPU {
     }
 
     fn draw_line_of_objects(&mut self, memory: &Memory, lcdc: u8, ly: u8) {
-        let obj_enable = lcdc & 0x01 != 0;
+        let obj_enable = lcdc & 0x02 != 0;
         if !obj_enable {
             return;
         }
@@ -283,7 +283,7 @@ impl PPU {
                 nn |= 0b0000_0100; // Bit 2
                 memory.write_byte(0xFF41, nn);
                 if stat & 0b0100_0000 != 0 {
-                    // println!("LY == LYC - Request STAT interrupt");
+                    // println!("LY == LYC == {:#04x} - Request STAT interrupt", ly);
                     // LY == LYC - Request STAT interrupt
                     let mut nn = memory.read_byte(0xFF0F);
                     nn |= 0b0000_0010; // Bit 1
