@@ -5,7 +5,6 @@ mod memory;
 mod ppu;
 mod utils;
 
-use debug::*;
 use gameboy::Gameboy;
 
 use error_iter::ErrorIter as _;
@@ -20,6 +19,7 @@ use winit_input_helper::WinitInputHelper;
 
 const WIDTH: u32 = 160;
 const HEIGHT: u32 = 144;
+const SCALE: u32 = 3;
 
 const TILE_DATA_WIDTH: u32 = 128 + 15;
 const TILE_DATA_HEIGHT: u32 = 192 + 23;
@@ -30,7 +30,7 @@ fn main() -> Result<(), Error> {
     let mut input = WinitInputHelper::new();
     // Main Window
     let window = {
-        let size = LogicalSize::new(WIDTH as f64 * 2.0, HEIGHT as f64 * 2.0);
+        let size = LogicalSize::new((WIDTH * SCALE) as f64, (HEIGHT * SCALE) as f64);
         WindowBuilder::new()
             .with_title("My Gameboy Emulator")
             .with_inner_size(size)
@@ -146,18 +146,6 @@ fn main() -> Result<(), Error> {
                 return;
             } else if input.key_pressed(KeyCode::Space) {
                 paused = !paused;
-            } else if input.key_pressed(KeyCode::KeyT) {
-                println!("TILES:");
-                dump_tile_data(&gameboy.memory);
-            } else if input.key_pressed(KeyCode::KeyV) {
-                println!("VRAM");
-                dump_vram(&gameboy.memory);
-            } else if input.key_pressed(KeyCode::KeyB) {
-                println!("BACKGROUND");
-                dump_background(&gameboy.memory);
-            } else if input.key_pressed(KeyCode::KeyO) {
-                println!("OAM");
-                dump_oam(&gameboy.memory);
             } else if input.key_pressed(KeyCode::KeyQ) {
                 gameboy.tick();
             } else if input.key_pressed(KeyCode::KeyW) {

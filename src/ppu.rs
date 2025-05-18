@@ -5,6 +5,7 @@ pub struct PPU {
     pixels: Vec<Vec<u8>>,
     color_index: Vec<Vec<u8>>,
     mode: u8,
+    window_line_counter: u8,
 }
 
 struct OAM {
@@ -22,6 +23,7 @@ impl PPU {
             pixels: vec![vec![0; 160]; 154],
             color_index: vec![vec![0; 160]; 154],
             mode: 0,
+            window_line_counter: 0,
         }
     }
 
@@ -203,6 +205,75 @@ impl PPU {
         }
     }
 
+    fn draw_line_of_window(&mut self, memory: &Memory, lcdc: u8, ly: u8) {
+        let window_enable = (lcdc & 0x20) != 0 && (lcdc & 0x01) != 0;
+        if !window_enable {
+            return;
+        }
+
+        let tile_data_start = if lcdc & 0b0001_0000 == 0 {
+            0x9000 as u16
+        } else {
+            0x8000 as u16
+        };
+        // Address where tile map starts
+        // LCDC bit 6 indicates window tile map: 0 = 9800–9BFF; 1 = 9C00–9FFF
+        let tile_map_start = if lcdc & 0b0100_0000 == 0 {
+            0x9800 as u16
+        } else {
+            0x9C00 as u16
+        };
+
+        // FF4A - WY: Window Y position
+        // FF4B - WX: Window X position
+        let wy = memory.read_byte(0xFF4A);
+        let wx = memory.read_byte(0xFF4B);
+
+        if wy > ly {
+            // Window starts below current line
+            self.window_line_counter = 0;
+            return;
+        }
+        if wx >= 167 {
+            // Window starts to outside the screen
+            return;
+        }
+
+        // Palette
+        let palette = memory.read_byte(0xFF47);
+
+        for lx in 0..160 {
+            if (wx as u16 + lx as u16) < 7 || (wx as u16 + lx as u16) >= 167 {
+                continue;
+            }
+            // Tile coordinate
+            let tile_x = lx / 8;
+            let tile_y = self.window_line_counter / 8;
+            // Tile id read from tile map
+            let tile_i = memory.read_byte(tile_map_start + tile_y as u16 * 32 + tile_x as u16);
+            // Tile data address based on tile id
+            let tile_addr = if lcdc & 0b0001_0000 == 0 {
+                tile_data_start.wrapping_add_signed(tile_i as i8 as i16 * 16) as u16
+            } else {
+                tile_data_start.wrapping_add(tile_i as u16 * 16)
+            };
+            if tile_addr < 0x8000 || tile_addr > 0x97FF || (tile_addr - 0x8000) % 16 != 0 {
+                panic!("Unexpected tile address {:#06x}", tile_addr)
+            }
+            // Pixel coordinate in the tile - 0..8
+            let pixel_x = lx - (tile_x * 8);
+            let pixel_y = self.window_line_counter - (tile_y * 8);
+            // Color index in palette
+            let pixel_i = self.get_tile_pixel(tile_addr, memory, pixel_x, pixel_y) as u8;
+            if pixel_i != 0 {
+                let pixel = (palette >> (pixel_i * 2)) & 0x03;
+                self.pixels[ly as usize][(wx + lx - 7) as usize] = pixel;
+                self.color_index[ly as usize][(wx + lx - 7) as usize] = pixel_i;
+            }
+        }
+        self.window_line_counter += 1;
+    }
+
     pub fn tick(&mut self, memory: &mut Memory, cycles: u8) {
         // 0xFF40 - LCDC: LCD control
         let lcdc = memory.read_byte(0xFF40);
@@ -275,6 +346,7 @@ impl PPU {
             // Draw a line of background
             if ly < 144 {
                 self.draw_line_of_background(memory, lcdc, ly);
+                self.draw_line_of_window(memory, lcdc, ly);
                 self.draw_line_of_objects(memory, lcdc, ly);
             }
             ly = (ly + 1) % 154;
@@ -299,6 +371,8 @@ impl PPU {
                     // println!("Setting mode to 1");
                     self.mode = 1;
                 }
+            } else if ly == 0 {
+                self.window_line_counter = 0;
             }
             if ly == lyc {
                 let mut nn = memory.read_byte(0xFF41);
