@@ -1,3 +1,4 @@
+use super::cartridge::Cartridge;
 use super::cpu::CPU;
 use super::memory::Memory;
 use super::ppu::PPU;
@@ -12,7 +13,8 @@ impl Gameboy {
     pub fn new(cartridge_path: &str) -> Self {
         let bootrom_path = "boot.bin";
         let bootrom: Vec<u8> = std::fs::read(bootrom_path).unwrap();
-        let cartridge: Vec<u8> = std::fs::read(cartridge_path).unwrap();
+        let cartridge_data: Vec<u8> = std::fs::read(cartridge_path).unwrap();
+        let cartridge = Cartridge::new(cartridge_data.clone());
 
         // Memory
         let memory = Memory::new(bootrom, cartridge);

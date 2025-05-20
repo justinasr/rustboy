@@ -4,6 +4,7 @@ mod gameboy;
 mod memory;
 mod ppu;
 mod utils;
+mod cartridge;
 
 use gameboy::Gameboy;
 

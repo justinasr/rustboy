@@ -173,7 +173,7 @@ impl PPU {
             // Tile start address. If tile size is 8x16, pick correct 8x8 tile.
             let tile_addr = 0x8000 + obj.index as u16 * tile_size as u16;
             // Y coordinate in tile, regardless of Y flip - 0..16.
-            let _tile_y = ly - (obj.y - 16);
+            let _tile_y = ly + 16 - obj.y;
             // Y coordinate in tile, taking in consideration Y flip.
             let tile_y = if y_flip {
                 tile_height - 1 - _tile_y

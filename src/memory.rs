@@ -1,11 +1,13 @@
+use crate::cartridge::Cartridge;
+
 pub struct Memory {
     bootrom: Vec<u8>,
-    cartridge: Vec<u8>,
+    cartridge: Cartridge,
     memory: Vec<u8>,
 }
 
 impl Memory {
-    pub fn new(bootrom: Vec<u8>, cartridge: Vec<u8>) -> Memory {
+    pub fn new(bootrom: Vec<u8>, cartridge: Cartridge) -> Memory {
         Memory {
             bootrom,
             cartridge,
@@ -17,8 +19,8 @@ impl Memory {
         if self.memory[0xFF50] == 0 && (addr as usize) < self.bootrom.len() {
             return self.bootrom[addr as usize];
         }
-        if addr < 0x8000 {
-            return self.cartridge[addr as usize];
+        if addr < 0x8000 || addr >= 0xA000 && addr <= 0xBFFF {
+            return self.cartridge.read_byte(addr);
         }
         self.memory[addr as usize]
     }
@@ -30,15 +32,14 @@ impl Memory {
     }
 
     pub fn write_byte(&mut self, addr: u16, value: u8) {
-        if addr < 0x8000 {
-            // I guess it is not supposed to write anything there?
-            // panic!("Trying to write {:#04x} to {:#06x}", value, addr)
+        if addr < 0x8000 || addr >= 0xA000 && addr <= 0xBFFF {
+            self.cartridge.write_byte(addr, value);
             return;
         }
         if addr == 0xFF00 {
             let nn = (value & 0xF0) | (self.memory[addr as usize] & 0x0F);
             self.memory[addr as usize] = nn;
-            return
+            return;
         }
         if addr == 0xFF46 {
             // Very cycle-inaccurate DMA transfer.
