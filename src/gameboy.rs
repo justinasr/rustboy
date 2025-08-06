@@ -13,6 +13,8 @@ impl Gameboy {
     pub fn new(cartridge_path: &str) -> Self {
         let bootrom_path = "boot.bin";
         let bootrom: Vec<u8> = std::fs::read(bootrom_path).unwrap();
+
+        // Cartridge
         let cartridge_data: Vec<u8> = std::fs::read(cartridge_path).unwrap();
         let cartridge = Cartridge::new(cartridge_data.clone());
 

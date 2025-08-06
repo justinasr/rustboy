@@ -265,11 +265,10 @@ impl PPU {
             let pixel_y = self.window_line_counter - (tile_y * 8);
             // Color index in palette
             let pixel_i = self.get_tile_pixel(tile_addr, memory, pixel_x, pixel_y) as u8;
-            if pixel_i != 0 {
-                let pixel = (palette >> (pixel_i * 2)) & 0x03;
-                self.pixels[ly as usize][(wx + lx - 7) as usize] = pixel;
-                self.color_index[ly as usize][(wx + lx - 7) as usize] = pixel_i;
-            }
+
+            let pixel = (palette >> (pixel_i * 2)) & 0x03;
+            self.pixels[ly as usize][(wx + lx - 7) as usize] = pixel;
+            self.color_index[ly as usize][(wx + lx - 7) as usize] = pixel_i;
         }
         self.window_line_counter += 1;
     }
