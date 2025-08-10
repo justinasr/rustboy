@@ -18,6 +18,11 @@ pub fn set_r8(b: u8, r: u8) -> u8 {
     r | (1 << b)
 }
 
+/** Update given bit b in r according to given boolean value */
+pub fn update_r8(b: u8, r: u8, value: bool) -> u8 {
+    (r & !(1 << b)) | ((value as u8) << b)
+}
+
 /** Take two bytes, join them into word, decrement by 1 and return the two bytes. */
 pub fn dec_r16(msb: u8, lsb: u8) -> (u8, u8) {
     u16_to_u8_u8(u8_u8_to_u16(msb, lsb).wrapping_sub(1))
