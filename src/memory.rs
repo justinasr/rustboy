@@ -1,24 +1,21 @@
 use crate::cartridge::Cartridge;
 
 pub struct Memory {
-    bootrom: Vec<u8>,
     cartridge: Cartridge,
     memory: Vec<u8>,
 }
 
 impl Memory {
-    pub fn new(bootrom: Vec<u8>, cartridge: Cartridge) -> Memory {
+    pub fn new(cartridge: Cartridge) -> Memory {
         Memory {
-            bootrom,
             cartridge,
             memory: vec![0; 0xFFFF + 1],
         }
     }
 
     pub fn read_byte(&self, addr: u16) -> u8 {
-        if self.memory[0xFF50] == 0 && (addr as usize) < self.bootrom.len() {
-            return self.bootrom[addr as usize];
-        }
+        // 0x0000 - 0x8000 - cartridge ROM
+        // 0xA000 - 0xBFFF - cartridge RAM
         if addr < 0x8000 || addr >= 0xA000 && addr <= 0xBFFF {
             return self.cartridge.read_byte(addr);
         }
@@ -32,26 +29,22 @@ impl Memory {
     }
 
     pub fn write_byte(&mut self, addr: u16, value: u8) {
+        // 0x0000 - 0x8000 - cartridge ROM
+        // 0xA000 - 0xBFFF - cartridge RAM
         if addr < 0x8000 || addr >= 0xA000 && addr <= 0xBFFF {
             self.cartridge.write_byte(addr, value);
             return;
         }
-        if addr == 0xFF00 {
-            let nn = (value & 0xF0) | (self.memory[addr as usize] & 0x0F);
-            self.memory[addr as usize] = nn;
+        // Writing XX to 0xFF46 starts a data transfer from (0xXX00..0xXX9F) to (0xFE00..0xFE9F).
+        // This is cycle-inaccurate implementation of that.
+        if addr == 0xFF46 {
+            let source = (value as u16) << 8;
+            for i in 0..=0x9F {
+                let byte = self.read_byte(source + i);
+                self.memory[0xFE00 + i as usize] = byte;
+            }
             return;
         }
-        if addr == 0xFF46 {
-            // Very cycle-inaccurate DMA transfer.
-            let start_addr = (value as u16) << 8;
-            for i in 0..=0x9F {
-                self.write_byte(0xFE00 + i, self.read_byte(start_addr + i));
-            }
-        }
-        self.memory[addr as usize] = value;
-    }
-
-    pub fn write_byte_(&mut self, addr: u16, value: u8) {
         self.memory[addr as usize] = value;
     }
 

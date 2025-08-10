@@ -43,7 +43,7 @@ pub struct CPU {
 impl CPU {
     pub fn new() -> CPU {
         return CPU {
-            pc: 0,
+            pc: 0x100, // After bootrom PC is pointing to 0x100
             sp: 0,
             a: 0,
             f: 0,

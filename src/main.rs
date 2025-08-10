@@ -36,7 +36,7 @@ fn main() -> Result<(), Error> {
     let window = {
         let size = LogicalSize::new((WIDTH * SCALE) as f64, (HEIGHT * SCALE) as f64);
         WindowBuilder::new()
-            .with_title("rustboy")
+            .with_title(format!("rustboy | {}", cartridge_name))
             .with_inner_size(size)
             .with_min_inner_size(size)
             .build(&event_loop)
@@ -127,7 +127,7 @@ fn main() -> Result<(), Error> {
                         value = (value & 0xF0) | 0x0F;
                     }
                     // Update input state
-                    gameboy.memory.write_byte_(0xFF00, value);
+                    gameboy.memory.write_byte(0xFF00, value);
 
                     gameboy.tick();
                 }

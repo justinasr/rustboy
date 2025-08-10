@@ -18,7 +18,7 @@ pub fn set_r8(b: u8, r: u8) -> u8 {
     r | (1 << b)
 }
 
-/** Update given bit b in r according to given boolean value */
+/** Update given bit b in r according to given boolean value. */
 pub fn update_r8(b: u8, r: u8, value: bool) -> u8 {
     (r & !(1 << b)) | ((value as u8) << b)
 }
