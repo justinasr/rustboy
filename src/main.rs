@@ -120,8 +120,8 @@ fn main() -> Result<(), Error> {
                         // Select buttons
                         value = update_r8(0, value, !input.key_held(KeyCode::KeyS));
                         value = update_r8(1, value, !input.key_held(KeyCode::KeyA));
-                        value = update_r8(2, value, !input.key_held(KeyCode::KeyX));
-                        value = update_r8(3, value, !input.key_held(KeyCode::KeyZ));
+                        value = update_r8(2, value, !input.key_held(KeyCode::KeyZ));
+                        value = update_r8(3, value, !input.key_held(KeyCode::KeyX));
                     } else {
                         // No selector - no buttons are pressed
                         value = (value & 0xF0) | 0x0F;
