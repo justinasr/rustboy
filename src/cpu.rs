@@ -35,16 +35,18 @@ pub struct CPU {
 impl CPU {
     pub fn new() -> CPU {
         return CPU {
-            pc: 0x100, // After bootrom PC is pointing to 0x100
-            sp: 0,
-            a: 0,
+            // Initial register state according to Pan Docs
+            pc: 0x100,
+            sp: 0xFFFE,
+            a: 0x01,
             f: 0,
-            b: 0,
-            c: 0,
+            b: 0xFF,
+            c: 0x13,
             d: 0,
-            e: 0,
-            h: 0,
-            l: 0,
+            e: 0xC1,
+            h: 0x84,
+            l: 0x03,
+
             ime: true,
             enable_ime: false,
             cycles: 0,
@@ -279,7 +281,7 @@ impl CPU {
         self.set_carry_flag(r & 0b0000_0001 != 0);
         self.set_subtraction_flag(false);
         self.set_half_carry_flag(false);
-        let nn = (r >> 1) | ((r << 7) & 0b0111_1111);
+        let nn = (r >> 1) & 0b0111_1111;
         self.set_zero_flag(nn == 0);
         nn
     }
@@ -489,7 +491,7 @@ impl CPU {
                 8
             }
             0x13 => {
-                // DEC DE
+                // INC DE
                 (self.d, self.e) = inc_r16(self.d, self.e);
                 8
             }
@@ -705,14 +707,14 @@ impl CPU {
                 let addr = self.get_hl();
                 let nn = self.inc_r8(memory.read_byte(addr));
                 memory.write_byte(addr, nn);
-                4
+                12
             }
             0x35 => {
                 // DEC (HL)
                 let addr = self.get_hl();
                 let nn = self.dec_r8(memory.read_byte(addr));
                 memory.write_byte(addr, nn);
-                4
+                12
             }
             0x36 => {
                 // LD (HL), d8
@@ -875,7 +877,7 @@ impl CPU {
                 12
             }
             0xC2 => {
-                // JR NZ, a16
+                // JP NZ, a16
                 let nn = self.load_word(memory);
                 if !self.get_zero_flag() {
                     self.pc = nn;
@@ -1192,7 +1194,7 @@ impl CPU {
                 16
             }
             0xEE => {
-                // XOR d8 XOR {:#04x}", nn);
+                // XOR d8 XOR
                 let nn = self.load_byte(memory);
                 self.a = self.xor(nn);
                 8
@@ -1305,23 +1307,28 @@ impl CPU {
 
         if self.ime {
             self.ime = false;
-            memory.write_byte(0xFF0F, interrupt_flag & !interrupt_enable);
             self.push_word(memory, self.pc);
+            let interrupt = interrupt_enable & interrupt_flag;
 
-            if (interrupt_enable & 0b0000_0001) != 0 {
+            if (interrupt & 0b0000_0001) != 0 {
                 // V-Blank interrupt requested
+                memory.write_byte(0xFF0F, interrupt_flag & !0b0000_0001);
                 self.pc = 0x0040;
-            } else if (interrupt_enable & 0b0000_0010) != 0 {
+            } else if (interrupt & 0b0000_0010) != 0 {
                 // LCD STAT interrupt requested
+                memory.write_byte(0xFF0F, interrupt_flag & !0b0000_0010);
                 self.pc = 0x0048;
-            } else if (interrupt_enable & 0b0000_0100) != 0 {
+            } else if (interrupt & 0b0000_0100) != 0 {
                 // Timer interrupt requested
+                memory.write_byte(0xFF0F, interrupt_flag & !0b0000_0100);
                 self.pc = 0x0050;
-            } else if (interrupt_enable & 0b0000_1000) != 0 {
+            } else if (interrupt & 0b0000_1000) != 0 {
                 // Serial interrupt requested
+                memory.write_byte(0xFF0F, interrupt_flag & !0b0000_1000);
                 self.pc = 0x0058;
-            } else if (interrupt_enable & 0b0001_0000) != 0 {
+            } else if (interrupt & 0b0001_0000) != 0 {
                 // Joypad interrupt requested
+                memory.write_byte(0xFF0F, interrupt_flag & !0b0001_0000);
                 self.pc = 0x0060;
             }
         }

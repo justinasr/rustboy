@@ -19,6 +19,10 @@ impl Memory {
         if addr < 0x8000 || addr >= 0xA000 && addr <= 0xBFFF {
             return self.cartridge.read_byte(addr);
         }
+        if addr == 0xFF4D {
+            // Special case in I/O registers, KEY1/SPD (CGB Mode only) register
+            return 0xFF;
+        }
         self.memory[addr as usize]
     }
 

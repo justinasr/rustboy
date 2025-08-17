@@ -37,13 +37,11 @@ impl Cartridge {
             if self.rom_type == 0x00 {
                 // No banking
                 return self.data[addr as usize];
-            } else if self.rom_type == 0x04 {
-                // 32 banks
+            } else {
+                // With banking - use ROM bank for offset
                 let offset_in_bank = (addr - 0x4000) as usize;
                 let bank_offset = (self.rom_bank as usize * 0x4000) as usize;
                 return self.data[bank_offset + offset_in_bank];
-            } else {
-                panic!("ROM type not implemented!");
             }
         }
         if addr >= 0xA000 && addr < 0xC000 {
