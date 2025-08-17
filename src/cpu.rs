@@ -26,7 +26,8 @@ pub struct CPU {
     enable_ime: bool,
 
     // CPU cycles for timer
-    cycles: u16,
+    tima_cycles: u16, // Cycles for TIMA timer
+    div_cycles: u16,  // Cycles for DIV timer
 
     // Whether CPU is halted
     halt: bool,
@@ -49,7 +50,8 @@ impl CPU {
 
             ime: true,
             enable_ime: false,
-            cycles: 0,
+            tima_cycles: 0,
+            div_cycles: 0,
             halt: false,
         };
     }
@@ -950,7 +952,9 @@ impl CPU {
                 let bit = (cb_opcode >> 3) & 0b0111;
                 let nn = self.get_reg(memory, i);
                 if 0x40 <= cb_opcode && cb_opcode <= 0x7F {
-                    self.bit_r8(bit, nn)
+                    self.bit_r8(bit, nn);
+                    // CB BIT instructions are either 2 or 3 machine cycles!
+                    if i == 6 { 12 } else { 8 }
                 } else {
                     let res = match cb_opcode {
                         0x00..=0x07 => {
@@ -1002,8 +1006,8 @@ impl CPU {
                     } else {
                         *self.get_mut_reg(i) = res;
                     }
+                    if i == 6 { 16 } else { 8 }
                 }
-                if i == 6 { 16 } else { 8 }
             }
             0xCC => {
                 // CALL Z, a16
@@ -1255,7 +1259,7 @@ impl CPU {
                 self.set_hl(hl);
                 self.set_zero_flag(false);
                 self.set_subtraction_flag(false);
-                16
+                12
             }
             0xF9 => {
                 // LD SP, HL
@@ -1335,32 +1339,42 @@ impl CPU {
     }
 
     fn update_timer(&mut self, memory: &mut Memory, cycles: u8) {
-        // FF04 - DIV: Divider register
-        let div = memory.read_byte(0xFF04);
-        memory.write_byte(0xFF04, div.wrapping_add(cycles * 4));
-        // FF05 - TIMA: Timer counter
-        let tima = memory.read_byte(0xFF05);
+        self.tima_cycles += cycles as u16;
+        self.div_cycles += cycles as u16;
+
+        if self.div_cycles >= 256 {
+            // FF04 - DIV: Divider register
+            // It is incremented every 256 CPU cycles
+            let div = memory.read_byte(0xFF04);
+            memory.write_byte(0xFF04, div.wrapping_add(1));
+            self.div_cycles -= 256;
+        }
+
         // FF06 - TMA: Timer modulo
         let tma = memory.read_byte(0xFF06);
         // FF07 - TAC: Timer control
         let tac = memory.read_byte(0xFF07);
 
         let increment_every: u16 = if tac & 0b0000_0011 == 0b0000_0000 {
-            // Increment every 256 machine-cycles
-            256
+            // Increment every 1024 CPU cycles
+            1024
         } else if tac & 0b0000_0011 == 0b0000_0001 {
-            // Increment every 4 machine-cycles
-            4
-        } else if tac & 0b0000_0011 == 0b0000_0010 {
-            // Increment every 16 machine-cycles
+            // Increment every 16 CPU cycles
             16
-        } else {
-            // Increment every 64 machine-cycles
+        } else if tac & 0b0000_0011 == 0b0000_0010 {
+            // Increment every 64 CPU cycles
             64
+        } else {
+            // Increment every 256 CPU cycles
+            256
         };
 
-        while self.cycles >= increment_every {
+        while self.tima_cycles >= increment_every {
+            // Bit 2 controls if TIMA is incremented
             if tac & 0b0000_0100 != 0 {
+                // FF05 - TIMA: Timer counter
+                // It must be here, otherwise Blargg's instr_timing test fails with #255
+                let tima = memory.read_byte(0xFF05);
                 // If increment is enabled
                 if tima == 0xFF {
                     // Overflow - reset TIMA to TMA
@@ -1373,7 +1387,7 @@ impl CPU {
                     memory.write_byte(0xFF05, tima + 1);
                 }
             }
-            self.cycles -= increment_every;
+            self.tima_cycles -= increment_every;
         }
     }
 
@@ -1387,7 +1401,6 @@ impl CPU {
         } else {
             self.execute_instruction(memory)
         };
-        self.cycles += cycles as u16;
 
         self.update_timer(memory, cycles);
 
